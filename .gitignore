@@ -3,3 +3,5 @@
 __pycache__
 response.json
 tests.py
+scrape.sh
+log.txt
