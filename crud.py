@@ -1,7 +1,16 @@
 import time
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy import select
-from schemas import Trial, Sponsor, TherapeuticArea, Country, Condition, Site, Location
+from datetime import datetime
+from sqlalchemy import MetaData, Table, select
+from schemas import (
+    Trial,
+    Sponsor,
+    TherapeuticArea,
+    Country,
+    Condition,
+    Site,
+    Location,
+    UpdateHistory,
+)
 from helper_functions import (
     timestamp_to_date,
     country_to_iso_codes,
@@ -21,7 +30,6 @@ def get_or_create(session, model, defaults=None, **kwargs):
 
     Returns:
         instance: The instance of the model found or created.
-        created (bool): A boolean indicating whether a new instance was created.
     """
     instance = session.query(model).filter_by(**kwargs).first()
 
@@ -32,14 +40,31 @@ def get_or_create(session, model, defaults=None, **kwargs):
         params = {**kwargs}
         if defaults:
             params.update(defaults)
-        try:
-            instance = model(**params)
-            session.add(instance)
-            return instance
 
-        except IntegrityError:
-            session.rollback()  # Rollback in case of error
-            return session.query(model).filter_by(**kwargs).first()
+        instance = model(**params)
+        session.add(instance)
+        return instance
+
+
+def delete_table_entries(session, *table_names):
+    """
+    Delete all entries from the specified tables in the database. Commiting changes has to be handled outside the function.
+
+    Parameters:
+    - session: SqlAlchemy database session.
+    - table_names (str): Variable length argument list of table names to delete entries from.
+    """
+    metadata = MetaData()
+    metadata.reflect(bind=session.bind)
+
+    for table_name in table_names:
+        if table_name in metadata.tables:
+            table = Table(table_name, metadata, autoload_with=session.bind)
+            # Delete all entries in the table
+            session.execute(table.delete())
+            print(f"All entries deleted from table '{table_name}'")
+        else:
+            print(f"Table '{table_name}' does not exist in the database.")
 
 
 def insert_trial_data(session, trial_overview: dict, trial_details: dict) -> None:
@@ -213,8 +238,6 @@ def insert_trial_data(session, trial_overview: dict, trial_details: dict) -> Non
         if country_row not in trial.countries:
             trial.countries.append(country_row)
 
-    session.commit()
-
 
 def update_location_coordinates(session):
     stmt = select(Location).where(Location.latitude == None)
@@ -231,3 +254,9 @@ def update_location_coordinates(session):
         loc.longitude = lon
         session.commit()
         time.sleep(1)
+
+
+def insert_update_status(session, update_status: str):
+    row = UpdateHistory(update_time=datetime.now(), status=update_status)
+    session.add(row)
+    session.commit()

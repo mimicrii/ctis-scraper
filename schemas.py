@@ -1,11 +1,11 @@
 from typing import List
 from typing import Optional
-from sqlalchemy import String, Integer, Float, Boolean, Date, ForeignKey, Column, Table
+from sqlalchemy import String, Integer, Date, DateTime, ForeignKey, Column, Table
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import DeclarativeBase
-from datetime import date
+from datetime import date, datetime
 
 
 # Base class that other classes inherit from
@@ -17,17 +17,35 @@ class Base(DeclarativeBase):
 trialsponsor = Table(
     "trialsponsor",
     Base.metadata,
-    Column("trial_id", ForeignKey("trial.id"), primary_key=True, nullable=False),
-    Column("sponsor_id", ForeignKey("sponsor.id"), primary_key=True, nullable=False),
+    Column(
+        "trial_id",
+        ForeignKey("trial.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+    Column(
+        "sponsor_id",
+        ForeignKey("sponsor.id"),
+        primary_key=True,
+        nullable=False,
+    ),
 )
 
 
 trialcondition = Table(
     "trialcondition",
     Base.metadata,
-    Column("trial_id", ForeignKey("trial.id"), primary_key=True, nullable=False),
     Column(
-        "condition_id", ForeignKey("condition.id"), primary_key=True, nullable=False
+        "trial_id",
+        ForeignKey("trial.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+    Column(
+        "condition_id",
+        ForeignKey("condition.id"),
+        primary_key=True,
+        nullable=False,
     ),
 )
 
@@ -35,16 +53,36 @@ trialcondition = Table(
 trialcountry = Table(
     "trialcountry",
     Base.metadata,
-    Column("trial_id", ForeignKey("trial.id"), primary_key=True, nullable=False),
-    Column("country_id", ForeignKey("country.id"), primary_key=True, nullable=False),
+    Column(
+        "trial_id",
+        ForeignKey("trial.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+    Column(
+        "country_id",
+        ForeignKey("country.id"),
+        primary_key=True,
+        nullable=False,
+    ),
 )
 
 
 trialsite = Table(
     "trialsite",
     Base.metadata,
-    Column("trial_id", ForeignKey("trial.id"), primary_key=True, nullable=False),
-    Column("site_id", ForeignKey("site.id"), primary_key=True, nullable=False),
+    Column(
+        "trial_id",
+        ForeignKey("trial.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+    Column(
+        "site_id",
+        ForeignKey("site.id"),
+        primary_key=True,
+        nullable=False,
+    ),
 )
 
 
@@ -87,7 +125,8 @@ class Trial(Base):
 
     # m:n
     sponsors: Mapped[List["Sponsor"]] = relationship(
-        secondary=trialsponsor, back_populates="trials"
+        secondary=trialsponsor,
+        back_populates="trials",
     )
     conditions: Mapped[List["Condition"]] = relationship(
         secondary=trialcondition, back_populates="trials"
@@ -100,7 +139,8 @@ class Trial(Base):
     )
 
     therapeutic_areas: Mapped[List["TherapeuticArea"]] = relationship(
-        secondary=trialtherapeuticarea, back_populates="trials"
+        secondary=trialtherapeuticarea,
+        back_populates="trials",
     )
 
 
@@ -124,7 +164,8 @@ class TherapeuticArea(Base):
     name: Mapped[str]
     # m:n
     trials: Mapped[List["Trial"]] = relationship(
-        secondary=trialtherapeuticarea, back_populates="therapeutic_areas"
+        secondary=trialtherapeuticarea,
+        back_populates="therapeutic_areas",
     )
 
 
@@ -144,7 +185,8 @@ class Condition(Base):
     name: Mapped[str] = mapped_column(String, index=True)
     # m:n
     trials: Mapped[List["Trial"]] = relationship(
-        secondary=trialcondition, back_populates="conditions"
+        secondary=trialcondition,
+        back_populates="conditions",
     )
 
 
@@ -181,3 +223,10 @@ class Location(Base):
     longitude: Mapped[Optional[float]]
     # 1:n
     sites: Mapped[List["Site"]] = relationship(back_populates="location")
+
+
+class UpdateHistory(Base):
+    __tablename__ = "update_history"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    update_time: Mapped[datetime]
+    status: Mapped[str]

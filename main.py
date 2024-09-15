@@ -4,34 +4,65 @@ import sys
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
+from tqdm import tqdm
 
-from api import get_trial_overview, get_trial_details
-from crud import insert_trial_data, update_location_coordinates
+from api import get_trial_overview, get_trial_details, get_total_trial_records
+from crud import (
+    delete_table_entries,
+    insert_trial_data,
+    update_location_coordinates,
+    insert_update_status,
+)
 from schemas import Base
 
 
 def main():
     load_dotenv()
     DATABASE_URI = os.getenv("DATABASE_URI")
-
     engine = create_engine(DATABASE_URI)
     Session = sessionmaker(engine)
+
     if len(sys.argv) < 2:
         print("Enter an argument")
         exit()
 
     match sys.argv[1]:
-        case "scrape_all":
-            Base.metadata.drop_all(engine)
-            Base.metadata.create_all(engine)
-            with Session() as session:
-                for trial_overview in get_trial_overview():
-                    trial_details = get_trial_details(trial_overview["ctNumber"])
-                    insert_trial_data(
-                        session=session,
-                        trial_overview=trial_overview,
-                        trial_details=trial_details,
+        case "scrape":
+            try:
+                Base.metadata.create_all(engine)
+                with Session() as session:
+                    delete_table_entries(
+                        session,
+                        "trialarea",
+                        "trialcondition",
+                        "trialcountry",
+                        "trialsite",
+                        "trialsponsor",
+                        "trial",
+                        "condition",
+                        "country",
+                        "site",
+                        "sponsor",
+                        "therapeutic_area",
                     )
+                    total_trial_records = get_total_trial_records()
+                    print("Scraping trial data...")
+                    for trial_overview in tqdm(
+                        get_trial_overview(), total=total_trial_records
+                    ):
+                        trial_details = get_trial_details(trial_overview["ctNumber"])
+                        insert_trial_data(
+                            session=session,
+                            trial_overview=trial_overview,
+                            trial_details=trial_details,
+                        )
+                    session.commit()
+                    insert_update_status(session, "Update successful")
+
+            except Exception as e:
+                session.rollback()
+                insert_update_status(session, f"Update failed - {type(e).__name__}")
+                raise
 
         case "update_coordinates":
             with Session() as session:

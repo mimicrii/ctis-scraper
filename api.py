@@ -35,11 +35,18 @@ def get_trial_overview() -> Generator:
             )
 
             ct_numbers_scraped += 1
-            print(trial_overview["ctNumber"])
             yield trial_overview
 
         page += 1
         next_page_available = json_data["pagination"]["nextPage"]
+
+
+def get_total_trial_records() -> int:
+    overview_url = "https://euclinicaltrials.eu/ctis-public-api/search"
+    r = requests.post(overview_url)
+    json_data = r.json()
+    total_trials = json_data.get("pagination").get("totalRecords")
+    return total_trials
 
 
 def get_trial_details(ct_number) -> dict:
