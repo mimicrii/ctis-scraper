@@ -1,21 +1,77 @@
 import requests
+import json
 from typing import Generator
 from helper_functions import convert_date_format
 
+OVERVIEW_URL = "https://euclinicaltrials.eu/ctis-public-api/search"
+OVERVIEW_PAYLOAD = json.dumps(
+    {
+        "pagination": {"page": 1, "size": 100},
+        "sort": {"property": "decisionDate", "direction": "DESC"},
+        "searchCriteria": {
+            "containAll": None,
+            "containAny": None,
+            "containNot": None,
+            "title": None,
+            "number": None,
+            "status": None,
+            "medicalCondition": None,
+            "sponsor": None,
+            "endPoint": None,
+            "productName": None,
+            "productRole": None,
+            "populationType": None,
+            "orphanDesignation": None,
+            "msc": None,
+            "ageGroupCode": None,
+            "therapeuticAreaCode": None,
+            "trialPhaseCode": None,
+            "sponsorTypeCode": None,
+            "gender": None,
+            "protocolCode": None,
+            "rareDisease": None,
+            "pip": None,
+            "haveOrphanDesignation": None,
+            "hasStudyResults": None,
+            "hasClinicalStudyReport": None,
+            "isLowIntervention": None,
+            "hasSeriousBreach": None,
+            "hasUnexpectedEvent": None,
+            "hasUrgentSafetyMeasure": None,
+            "isTransitioned": None,
+            "eudraCtCode": None,
+            "trialRegion": None,
+            "vulnerablePopulation": None,
+            "mscStatus": None,
+        },
+    }
+)
+OVERVIEW_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:130.0) Gecko/20100101 Firefox/130.0",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate, br, zstd",
+    "Content-Type": "application/json",
+    "Origin": "https://euclinicaltrials.eu",
+    "Connection": "keep-alive",
+    "Referer": "https://euclinicaltrials.eu/ctis-public/search?lang=en",
+    "Cookie": "accepted_cookie=true",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
+    "DNT": "1",
+    "Sec-GPC": "1",
+    "TE": "trailers",
+}
+
 
 def get_trial_overview() -> Generator:
-    overview_url = "https://euclinicaltrials.eu/ctis-public-api/search"
     next_page_available = True
     page = 1
     ct_numbers_scraped = 0
 
     while next_page_available:
-        search_params = {
-            "pagination": {"page": page, "size": 250},
-            "sort": {"property": "decisionDate", "direction": "DESC"},
-            "searchCriteria": {"containAll": "", "containAny": "", "containNot": ""},
-        }
-        r = requests.post(overview_url, json=search_params)
+        r = requests.post(OVERVIEW_URL, headers=OVERVIEW_HEADERS, data=OVERVIEW_PAYLOAD)
         json_data = r.json()
 
         for trial in json_data["data"]:
@@ -42,8 +98,7 @@ def get_trial_overview() -> Generator:
 
 
 def get_total_trial_records() -> int:
-    overview_url = "https://euclinicaltrials.eu/ctis-public-api/search"
-    r = requests.post(overview_url)
+    r = requests.post(OVERVIEW_URL, headers=OVERVIEW_HEADERS, data=OVERVIEW_PAYLOAD)
     json_data = r.json()
     total_trials = json_data.get("pagination").get("totalRecords")
     return total_trials
