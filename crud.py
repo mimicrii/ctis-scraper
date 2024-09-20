@@ -60,9 +60,8 @@ def delete_table_entries(session, *table_names):
     for table_name in table_names:
         if table_name in metadata.tables:
             table = Table(table_name, metadata, autoload_with=session.bind)
-            # Delete all entries in the table
+            print(f"Deleting entries from table '{table_name}' ...")
             session.execute(table.delete())
-            print(f"All entries deleted from table '{table_name}'")
         else:
             print(f"Table '{table_name}' does not exist in the database.")
 

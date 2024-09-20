@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 from tqdm import tqdm
 
+from schemas import Base
 from api import get_trial_overview, get_trial_details, get_total_trial_records
 from crud import (
     delete_table_entries,
@@ -13,7 +14,6 @@ from crud import (
     update_location_coordinates,
     insert_update_status,
 )
-from schemas import Base
 
 
 def main():
