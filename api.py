@@ -4,48 +4,46 @@ from typing import Generator
 from helper_functions import convert_date_format
 
 OVERVIEW_URL = "https://euclinicaltrials.eu/ctis-public-api/search"
-OVERVIEW_PAYLOAD = json.dumps(
-    {
-        "pagination": {"page": 1, "size": 100},
-        "sort": {"property": "decisionDate", "direction": "DESC"},
-        "searchCriteria": {
-            "containAll": None,
-            "containAny": None,
-            "containNot": None,
-            "title": None,
-            "number": None,
-            "status": None,
-            "medicalCondition": None,
-            "sponsor": None,
-            "endPoint": None,
-            "productName": None,
-            "productRole": None,
-            "populationType": None,
-            "orphanDesignation": None,
-            "msc": None,
-            "ageGroupCode": None,
-            "therapeuticAreaCode": None,
-            "trialPhaseCode": None,
-            "sponsorTypeCode": None,
-            "gender": None,
-            "protocolCode": None,
-            "rareDisease": None,
-            "pip": None,
-            "haveOrphanDesignation": None,
-            "hasStudyResults": None,
-            "hasClinicalStudyReport": None,
-            "isLowIntervention": None,
-            "hasSeriousBreach": None,
-            "hasUnexpectedEvent": None,
-            "hasUrgentSafetyMeasure": None,
-            "isTransitioned": None,
-            "eudraCtCode": None,
-            "trialRegion": None,
-            "vulnerablePopulation": None,
-            "mscStatus": None,
-        },
-    }
-)
+OVERVIEW_PAYLOAD = {
+    "pagination": {"page": 1, "size": 100},
+    "sort": {"property": "decisionDate", "direction": "DESC"},
+    "searchCriteria": {
+        "containAll": None,
+        "containAny": None,
+        "containNot": None,
+        "title": None,
+        "number": None,
+        "status": None,
+        "medicalCondition": None,
+        "sponsor": None,
+        "endPoint": None,
+        "productName": None,
+        "productRole": None,
+        "populationType": None,
+        "orphanDesignation": None,
+        "msc": None,
+        "ageGroupCode": None,
+        "therapeuticAreaCode": None,
+        "trialPhaseCode": None,
+        "sponsorTypeCode": None,
+        "gender": None,
+        "protocolCode": None,
+        "rareDisease": None,
+        "pip": None,
+        "haveOrphanDesignation": None,
+        "hasStudyResults": None,
+        "hasClinicalStudyReport": None,
+        "isLowIntervention": None,
+        "hasSeriousBreach": None,
+        "hasUnexpectedEvent": None,
+        "hasUrgentSafetyMeasure": None,
+        "isTransitioned": None,
+        "eudraCtCode": None,
+        "trialRegion": None,
+        "vulnerablePopulation": None,
+        "mscStatus": None,
+    },
+}
 OVERVIEW_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:130.0) Gecko/20100101 Firefox/130.0",
     "Accept": "application/json, text/plain, */*",
@@ -68,10 +66,13 @@ OVERVIEW_HEADERS = {
 def get_trial_overview() -> Generator:
     next_page_available = True
     page = 1
-    ct_numbers_scraped = 0
+    payload = OVERVIEW_PAYLOAD
 
     while next_page_available:
-        r = requests.post(OVERVIEW_URL, headers=OVERVIEW_HEADERS, data=OVERVIEW_PAYLOAD)
+        payload["pagination"]["page"] = page
+        r = requests.post(
+            OVERVIEW_URL, headers=OVERVIEW_HEADERS, data=json.dumps(payload)
+        )
         json_data = r.json()
 
         for trial in json_data["data"]:
@@ -89,8 +90,6 @@ def get_trial_overview() -> Generator:
                 input_format="%d/%m/%Y",
                 output_format="%Y-%m-%d",
             )
-
-            ct_numbers_scraped += 1
             yield trial_overview
 
         page += 1
@@ -98,7 +97,9 @@ def get_trial_overview() -> Generator:
 
 
 def get_total_trial_records() -> int:
-    r = requests.post(OVERVIEW_URL, headers=OVERVIEW_HEADERS, data=OVERVIEW_PAYLOAD)
+    r = requests.post(
+        OVERVIEW_URL, headers=OVERVIEW_HEADERS, data=json.dumps(OVERVIEW_PAYLOAD)
+    )
     json_data = r.json()
     total_trials = json_data.get("pagination").get("totalRecords")
     return total_trials
