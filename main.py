@@ -35,8 +35,8 @@ def main():
                         delete_all_except=True,
                         table_names=["location", "update_history"],
                     )
-                    Base.metadata.create_all(engine)
                     session.commit()
+                    Base.metadata.create_all(engine)
 
                     total_trial_records = get_total_trial_records()
                     print("Scraping trial data...")
