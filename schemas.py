@@ -31,6 +31,22 @@ trialsponsor = Table(
     ),
 )
 
+trialthirdparty = Table(
+    "trialthirdparty",
+    Base.metadata,
+    Column(
+        "trial_id",
+        ForeignKey("trial.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+    Column(
+        "thirdparty_id",
+        ForeignKey("third_party.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+)
 
 trialcondition = Table(
     "trialcondition",
@@ -44,24 +60,6 @@ trialcondition = Table(
     Column(
         "condition_id",
         ForeignKey("condition.id"),
-        primary_key=True,
-        nullable=False,
-    ),
-)
-
-
-trialcountry = Table(
-    "trialcountry",
-    Base.metadata,
-    Column(
-        "trial_id",
-        ForeignKey("trial.id"),
-        primary_key=True,
-        nullable=False,
-    ),
-    Column(
-        "country_id",
-        ForeignKey("country.id"),
         primary_key=True,
         nullable=False,
     ),
@@ -98,6 +96,57 @@ trialtherapeuticarea = Table(
     ),
 )
 
+trialproduct = Table(
+    "trialproduct",
+    Base.metadata,
+    Column("trial_id", ForeignKey("trial.id"), primary_key=True, nullable=False),
+    Column(
+        "product_id",
+        ForeignKey("product.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+)
+
+
+productadministrationroutes = Table(
+    "productadministrationroutes",
+    Base.metadata,
+    Column("product_id", ForeignKey("product.id"), primary_key=True, nullable=False),
+    Column(
+        "administration_route_id",
+        ForeignKey("administration_route.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+)
+
+productsubstance = Table(
+    "productsubstance",
+    Base.metadata,
+    Column("product_id", ForeignKey("product.id"), primary_key=True, nullable=False),
+    Column(
+        "substance_id",
+        ForeignKey("substance.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+)
+
+thirdpartyduty = Table(
+    "thirdpartyduty",
+    Base.metadata,
+    Column(
+        "third_party_id", ForeignKey("third_party.id"), primary_key=True, nullable=False
+    ),
+    Column(
+        "duty_id",
+        ForeignKey("duty.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+)
+
 
 # data tables
 class Trial(Base):
@@ -128,19 +177,72 @@ class Trial(Base):
         secondary=trialsponsor,
         back_populates="trials",
     )
+    third_parties: Mapped[List["ThirdParty"]] = relationship(
+        secondary=trialthirdparty,
+        back_populates="trials",
+    )
     conditions: Mapped[List["Condition"]] = relationship(
         secondary=trialcondition, back_populates="trials"
     )
     sites: Mapped[List["Site"]] = relationship(
         secondary=trialsite, back_populates="trials"
     )
-    countries: Mapped[List["Country"]] = relationship(
-        secondary=trialcountry, back_populates="trials"
+    products: Mapped[List["Product"]] = relationship(
+        secondary=trialproduct, back_populates="trials"
     )
-
     therapeutic_areas: Mapped[List["TherapeuticArea"]] = relationship(
         secondary=trialtherapeuticarea,
         back_populates="trials",
+    )
+
+
+class Product(Base):
+    __tablename__ = "product"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    name: Mapped[Optional[str]]
+    active_substance: Mapped[Optional[str]]
+    name_org: Mapped[Optional[str]]
+    pharmaceutical_form_display: Mapped[Optional[str]]
+    is_paediatric_formulation: Mapped[Optional[bool]]
+    role_in_trial_code: Mapped[int]
+    orphan_drug: Mapped[Optional[bool]]
+    ev_code: Mapped[Optional[str]]
+    eu_mp_number: Mapped[Optional[str]]
+    sponsor_product_code: Mapped[Optional[str]]
+    # m:n
+    trials: Mapped[List["Trial"]] = relationship(
+        secondary=trialproduct, back_populates="products"
+    )
+    substances: Mapped[List["Substance"]] = relationship(
+        secondary=productsubstance, back_populates="products"
+    )
+    administration_routes: Mapped[List["AdministrationRoute"]] = relationship(
+        secondary=productadministrationroutes, back_populates="products"
+    )
+
+
+class Substance(Base):
+    __tablename__ = "substance"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    name: Mapped[str]
+    ev_code: Mapped[Optional[str]]
+    substance_origin: Mapped[Optional[str]]
+    act_substance_origin: Mapped[Optional[str]]
+    product_pk: Mapped[Optional[str]]
+    substance_pk: Mapped[Optional[str]]
+    # m:n
+    products: Mapped[List["Product"]] = relationship(
+        secondary=productsubstance, back_populates="substances"
+    )
+
+
+class AdministrationRoute(Base):
+    __tablename__ = "administration_route"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    name: Mapped[str]
+    # m:n
+    products: Mapped[List["Product"]] = relationship(
+        secondary=productadministrationroutes, back_populates="administration_routes"
     )
 
 
@@ -151,10 +253,39 @@ class Sponsor(Base):
     type: Mapped[Optional[str]]
     is_primary: Mapped[bool]
     org_id: Mapped[str]
-
     # m:n
     trials: Mapped[List["Trial"]] = relationship(
         secondary=trialsponsor, back_populates="sponsors"
+    )
+
+
+class ThirdParty(Base):
+    __tablename__ = "third_party"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    name: Mapped[str]
+    type: Mapped[str]
+    is_commercial: Mapped[bool]
+    org_id: Mapped[Optional[str]]
+    location_id = mapped_column(ForeignKey("location.id"), nullable=False)
+    # 1:n
+    location: Mapped["Location"] = relationship(back_populates="third_parties")
+    # m:n
+    trials: Mapped[List["Trial"]] = relationship(
+        secondary=trialthirdparty, back_populates="third_parties"
+    )
+    duties: Mapped[List["Duty"]] = relationship(
+        secondary=thirdpartyduty, back_populates="third_parties"
+    )
+
+
+class Duty(Base):
+    __tablename__ = "duty"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    name: Mapped[Optional[str]]
+    code: Mapped[int]
+    # m:n
+    third_parties: Mapped[List["ThirdParty"]] = relationship(
+        secondary=thirdpartyduty, back_populates="duties"
     )
 
 
@@ -166,16 +297,6 @@ class TherapeuticArea(Base):
     trials: Mapped[List["Trial"]] = relationship(
         secondary=trialtherapeuticarea,
         back_populates="therapeutic_areas",
-    )
-
-
-class Country(Base):
-    __tablename__ = "country"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
-    name: Mapped[Optional[str]]
-    # m:n
-    trials: Mapped[List["Trial"]] = relationship(
-        secondary=trialcountry, back_populates="countries"
     )
 
 
@@ -194,7 +315,6 @@ class Site(Base):
     __tablename__ = "site"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
     name: Mapped[Optional[str]]
-    department: Mapped[Optional[str]]
     type: Mapped[Optional[str]]
     commercial: Mapped[Optional[bool]]
     phone: Mapped[Optional[str]]
@@ -223,6 +343,7 @@ class Location(Base):
     longitude: Mapped[Optional[float]]
     # 1:n
     sites: Mapped[List["Site"]] = relationship(back_populates="location")
+    third_parties: Mapped[List["ThirdParty"]] = relationship(back_populates="location")
 
 
 class UpdateHistory(Base):

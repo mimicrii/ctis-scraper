@@ -17,7 +17,7 @@ from crud import (
 
 
 def main():
-    load_dotenv()
+    load_dotenv()  # load dotenv when testing locally
     DATABASE_URI = os.getenv("DATABASE_URI")
     engine = create_engine(DATABASE_URI)
     Session = sessionmaker(engine)
@@ -28,25 +28,19 @@ def main():
 
     match sys.argv[1]:
         case "scrape":
-            try:
-                Base.metadata.create_all(engine)
-                with Session() as session:
+            with Session() as session:
+                try:
                     delete_table_entries(
-                        session,
-                        "trialarea",
-                        "trialcondition",
-                        "trialcountry",
-                        "trialsite",
-                        "trialsponsor",
-                        "trial",
-                        "condition",
-                        "country",
-                        "site",
-                        "sponsor",
-                        "therapeutic_area",
+                        session=session,
+                        delete_all_except=True,
+                        table_names=["location", "update_history"],
                     )
+                    Base.metadata.create_all(engine)
+                    session.commit()
+
                     total_trial_records = get_total_trial_records()
                     print("Scraping trial data...")
+
                     for trial_overview in tqdm(
                         get_trial_overview(), total=total_trial_records
                     ):
@@ -59,10 +53,10 @@ def main():
                     session.commit()
                     insert_update_status(session, "Update successful")
 
-            except Exception as e:
-                session.rollback()
-                insert_update_status(session, f"Update failed - {type(e).__name__}")
-                raise
+                except Exception as e:
+                    session.rollback()
+                    insert_update_status(session, f"Update failed - {type(e).__name__}")
+                    raise
 
         case "update_coordinates":
             with Session() as session:

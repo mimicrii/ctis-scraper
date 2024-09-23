@@ -1,3 +1,4 @@
+from typing import Tuple
 import pycountry
 import requests
 from datetime import datetime
@@ -46,12 +47,13 @@ def convert_date_format(date_str: str, input_format: str, output_format: str) ->
     return formatted_date
 
 
-def country_to_iso_codes(country_name):
+def country_to_iso_codes(country_name) -> Tuple[str, str]:
+    """
+    Converts the name of a country to its corresponding ISO2 and ISO3 codes.
+    """
+
     try:
         country = pycountry.countries.lookup(country_name)
         return country.alpha_2, country.alpha_3
     except LookupError:
         return None, None
-
-
-

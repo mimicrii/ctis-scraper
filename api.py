@@ -1,6 +1,6 @@
 import requests
 import json
-from typing import Generator
+from typing import Generator, Tuple
 from helper_functions import convert_date_format
 
 OVERVIEW_URL = "https://euclinicaltrials.eu/ctis-public-api/search"
@@ -64,6 +64,17 @@ OVERVIEW_HEADERS = {
 
 
 def get_trial_overview() -> Generator:
+    """
+    Generate a generator that yields trial overviews.
+
+    This function paginates through the API results, processing each page
+    and yielding individual trial overviews. Handles pagination by
+    incrementing the page number and checking for the availability of
+    the next page.
+
+    Yields:
+        dict: A dictionary containing trial overview information.
+    """
     next_page_available = True
     page = 1
     payload = OVERVIEW_PAYLOAD
@@ -97,6 +108,9 @@ def get_trial_overview() -> Generator:
 
 
 def get_total_trial_records() -> int:
+    """
+    Uses the overview api endpoint to return the total number of trials currently available.
+    """
     r = requests.post(
         OVERVIEW_URL, headers=OVERVIEW_HEADERS, data=json.dumps(OVERVIEW_PAYLOAD)
     )
@@ -105,13 +119,31 @@ def get_total_trial_records() -> int:
     return total_trials
 
 
-def get_trial_details(ct_number) -> dict:
+def get_trial_details(ct_number: str) -> dict:
+    """
+    Return the response with trial details of a single trial.
+
+    Parameter:
+    - ct_number: The ct number identifier of a trial listed in the ctis portal.
+    """
     details_url = f"https://euclinicaltrials.eu/ctis-public-api/retrieve/{ct_number}"
     r = requests.get(details_url)
     return r.json()
 
 
-def get_location_coordinates(street: str, city: str, country: str, postalcode: str):
+def get_location_coordinates(
+    street: str, city: str, country: str, postalcode: str
+) -> Tuple[int, int]:
+    """
+    Uses the Nomatim geocoding api to get lat and lon coordinates for provided address information
+
+    Parameter:
+    - street: Location street
+    - city: Location city
+    - country: Location country
+    - postalcode: Location postalcode
+    """
+
     url = f"https://nominatim.openstreetmap.org/search"
 
     params = {
@@ -122,7 +154,7 @@ def get_location_coordinates(street: str, city: str, country: str, postalcode: s
         "format": "json",
         "limit": "1",
     }
-    headers = {"User-Agent": "clinicaltrial_sites/0.0.1"}
+    headers = {"User-Agent": "clinicaltrials/0.0.1"}
 
     r = requests.get(url, params=params, headers=headers)
     if r.status_code == 200:
