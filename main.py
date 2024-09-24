@@ -21,6 +21,7 @@ def main():
     DATABASE_URI = os.getenv("DATABASE_URI")
     engine = create_engine(DATABASE_URI)
     Session = sessionmaker(engine)
+    total_trial_records = get_total_trial_records()
 
     if len(sys.argv) < 2:
         print("Enter an argument")
@@ -35,12 +36,10 @@ def main():
                         delete_all_except=True,
                         table_names=["location", "update_history"],
                     )
-                    session.commit()
+                    session.commit()  # TODO: Do not commit here to keep whole process in one transaction
                     Base.metadata.create_all(engine)
 
-                    total_trial_records = get_total_trial_records()
                     print("Scraping trial data...")
-
                     for trial_overview in tqdm(
                         get_trial_overview(), total=total_trial_records
                     ):
@@ -50,6 +49,7 @@ def main():
                             trial_overview=trial_overview,
                             trial_details=trial_details,
                         )
+
                     session.commit()
                     insert_update_status(session, "Update successful")
 

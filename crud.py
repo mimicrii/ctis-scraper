@@ -1,8 +1,10 @@
 import time
 from datetime import datetime
 from typing import TypeVar, cast, List
+
 from sqlalchemy import MetaData, select, text
 from sqlalchemy.orm import Session
+
 from schemas import (
     Trial,
     Sponsor,
@@ -17,7 +19,7 @@ from schemas import (
     Location,
     UpdateHistory,
 )
-from helper_functions import (
+from helpers import (
     timestamp_to_date,
     country_to_iso_codes,
 )
@@ -121,7 +123,7 @@ def insert_trial_data(
         .get("nctNumber", {})
         .get("number")
     )
-    trial_status = trial_details.get("ctPublicStatus")
+    trial_status = trial_details.get("ctStatus")
     trial_phase = trial_overview.get("trialPhase")
     trial_age_group = trial_overview.get("ageGroup")
     trial_gender = trial_overview.get("gender")
@@ -330,7 +332,9 @@ def insert_trial_data(
                 tp_duties = third_party.get("sponsorDuties")
                 if tp_duties:
                     for duty in tp_duties:
-                        duty_row = get_or_create(session, Duty, code=duty.get("code"))
+                        duty_row = get_or_create(
+                            session, Duty, code=duty.get("code")
+                        )  # TODO: Decode duty codes to actual duties
                         if duty_row not in third_party_row.duties:
                             third_party_row.duties.append(duty_row)
 
@@ -341,17 +345,19 @@ def insert_trial_data(
     )
     if products:
         for product in products:
-            p_name = product.get("prodName")
+            p_name = product.get("productDictionaryInfo").get("prodName")
             p_active_substance = product.get("productDictionaryInfo").get(
                 "activeSubstanceName"
             )
             p_name_org = product.get("productDictionaryInfo").get("nameOrg")
             p_pharmaceutical_form_display = product.get("pharmaceuticalFormDisplay")
             p_is_paediatric_formulation = product.get("isPaediatricFormulation")
-            p_role_in_trial_code = product.get("mpRoleInTrial")
+            p_role_in_trial_code = product.get(
+                "mpRoleInTrial"
+            )  # TODO: Decode role code
             p_orphan_drug = product.get("orphanDrugEdit")
             p_ev_code = product.get("evCode")
-            p_eu_mp_number = product.get("euMpNumber")
+            p_eu_mp_number = product.get("productDictionaryInfo").get("euMpNumber")
             p_sponsor_product_code = product.get("productDictionaryInfo").get(
                 "sponsorProductCode"
             )
@@ -373,7 +379,7 @@ def insert_trial_data(
             if product_row not in trial.products:
                 trial.products.append(product_row)
 
-            substances = product.get("productSubstances")
+            substances = product.get("productDictionaryInfo").get("productSubstances")
             if substances:
                 for substance in substances:
                     s_name = substance.get("actSubstName")
@@ -396,14 +402,12 @@ def insert_trial_data(
                     if substance_row not in product_row.substances:
                         product_row.substances.append(substance_row)
 
-                    administration_routes = product.get("routes")
-                    if administration_routes:
-                        for route in administration_routes:
-                            route_row = get_or_create(
-                                session, AdministrationRoute, name=route
-                            )
-                            if route_row not in product_row.administration_routes:
-                                product_row.administration_routes.append(route_row)
+            administration_routes = product.get("routes")
+            if administration_routes:
+                for route in administration_routes:
+                    route_row = get_or_create(session, AdministrationRoute, name=route)
+                    if route_row not in product_row.administration_routes:
+                        product_row.administration_routes.append(route_row)
 
 
 def update_location_coordinates(session) -> None:

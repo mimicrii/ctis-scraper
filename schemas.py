@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from typing import List
 from typing import Optional
 from sqlalchemy import String, Integer, ForeignKey, Column, Table
@@ -5,7 +6,6 @@ from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import DeclarativeBase
-from datetime import date, datetime
 
 
 # Base class that other classes inherit from
@@ -41,7 +41,7 @@ trialthirdparty = Table(
         nullable=False,
     ),
     Column(
-        "thirdparty_id",
+        "third_party_id",
         ForeignKey("third_party.id"),
         primary_key=True,
         nullable=False,
