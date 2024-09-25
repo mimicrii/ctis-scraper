@@ -17,7 +17,7 @@ from crud import (
 
 
 def main():
-    load_dotenv()  # load dotenv when testing locally
+    load_dotenv()  # load dotenv when running locally
     DATABASE_URI = os.getenv("DATABASE_URI")
     engine = create_engine(DATABASE_URI)
     Session = sessionmaker(engine)

@@ -2,6 +2,7 @@ import time
 from datetime import datetime
 from typing import TypeVar, cast, List
 
+import yaml
 from sqlalchemy import MetaData, select, text
 from sqlalchemy.orm import Session
 
@@ -26,6 +27,9 @@ from helpers import (
 from api import get_location_coordinates
 
 Model = TypeVar("Model")
+
+with open("decodings.yaml", "r") as file:
+    decodings = yaml.safe_load(file)
 
 
 def get_or_create(session: Session, model: Model, defaults=None, **kwargs) -> Model:
@@ -330,11 +334,14 @@ def insert_trial_data(
                     trial.third_parties.append(third_party_row)
 
                 tp_duties = third_party.get("sponsorDuties")
+                duty_decoding = decodings["third_party_duty"]
+
                 if tp_duties:
                     for duty in tp_duties:
+                        duty_code = duty.get("code")
                         duty_row = get_or_create(
-                            session, Duty, code=duty.get("code")
-                        )  # TODO: Decode duty codes to actual duties
+                            session, Duty, code=duty_code, name=duty_decoding[duty_code]
+                        )
                         if duty_row not in third_party_row.duties:
                             third_party_row.duties.append(duty_row)
 

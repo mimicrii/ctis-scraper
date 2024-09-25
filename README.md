@@ -18,7 +18,7 @@ This project is a Python-based web scraper that uses the European Clinical Trial
 ## Installation
 
 ### Prerequisites
-- Python 3.x
+- Python 3.10+
 - Docker
 
 ### Clone the Repository
