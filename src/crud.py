@@ -3,10 +3,12 @@ from datetime import datetime
 from typing import TypeVar, cast, List
 
 import yaml
-from sqlalchemy import MetaData, select, text
-from sqlalchemy.orm import Session
+from sqlalchemy import MetaData, select, text, create_engine
+from sqlalchemy.orm import Session, sessionmaker
+from tqdm import tqdm
 
-from schemas import (
+from src.schemas import (
+    Base,
     Trial,
     Sponsor,
     ThirdParty,
@@ -20,11 +22,14 @@ from schemas import (
     Location,
     UpdateHistory,
 )
-from helpers import (
-    timestamp_to_date,
-    country_to_iso_codes,
+from src.parse import TrialOverview
+from src.helpers import timestamp_to_date, country_to_iso_codes, convert_date_format
+from src.api import (
+    get_location_coordinates,
+    get_total_trial_records,
+    get_trial_overview,
+    get_trial_details,
 )
-from api import get_location_coordinates
 
 Model = TypeVar("Model")
 
@@ -36,7 +41,7 @@ def get_or_create(session: Session, model: Model, defaults=None, **kwargs) -> Mo
     """
     Get an instance of the model or create it and add it to session if it doesn't exist.
 
-    Parameters:
+    Parameter:
         session (Session): SQLAlchemy session object.
         model (Base): SQLAlchemy model class.
         defaults (dict, optional): A dictionary of default values to use if creating a new instance.
@@ -67,7 +72,7 @@ def delete_table_entries(
     Drop tables with CASCADE from the specified tables or from all tables except the specified ones in the database.
     Committing changes has to be handled outside the function.
 
-    Parameters:
+    Parameter:
     - session: SQLAlchemy database session.
     - table_names (list): List of table names to drop.
     - delete_all_except (bool): If True, drop all tables except those specified.
@@ -94,12 +99,12 @@ def delete_table_entries(
 
 
 def insert_trial_data(
-    session: Session, trial_overview: dict, trial_details: dict
+    session: Session, trial_overview: TrialOverview, trial_details: dict
 ) -> None:
     """
     Inserts scraped trial data into database.
 
-    Parameters:
+    Parameter:
     - trial_overview: Overview of trial scraped from overview api endpoint.
     - trial_details: Trial details. Full response from the trial details api endpoint.
     """
@@ -110,9 +115,9 @@ def insert_trial_data(
         .get("trialDetails")
     )
 
-    trial_title = trial_overview.get("ctTitle")
+    trial_title = trial_overview.ctTitle
     trial_short_title = trial_info.get("clinicalTrialIdentifiers").get("shortTitle")
-    trial_ct_number = trial_overview.get("ctNumber")
+    trial_ct_number = trial_overview.ctNumber
     is_trial_transitioned = (
         trial_details.get("authorizedApplication")
         .get("eudraCt", {})
@@ -128,10 +133,10 @@ def insert_trial_data(
         .get("number")
     )
     trial_status = trial_details.get("ctStatus")
-    trial_phase = trial_overview.get("trialPhase")
-    trial_age_group = trial_overview.get("ageGroup")
-    trial_gender = trial_overview.get("gender")
-    trial_region = trial_overview.get("trialRegion")
+    trial_phase = trial_overview.trialPhase
+    trial_age_group = trial_overview.ageGroup
+    trial_gender = trial_overview.gender
+    trial_region = trial_overview.trialRegion
     trial_recruitment_start_date = (
         trial_info.get("trialInformation")
         .get("trialDuration")
@@ -141,8 +146,12 @@ def insert_trial_data(
     trial_estimated_end_date = (
         trial_info.get("trialInformation").get("trialDuration").get("estimatedEndDate")
     )
-    trial_estimated_recruitment = trial_overview.get("totalNumbersEnrolled")
-    trial_last_update = trial_overview.get("lastUpdated")
+    trial_estimated_recruitment = trial_overview.totalNumberEnrolled
+    trial_last_update = convert_date_format(
+        trial_overview.lastUpdated,
+        input_format="%d/%m/%Y",
+        output_format="%Y-%m-%d",
+    )
 
     trial = Trial(
         title=trial_title,
@@ -161,7 +170,7 @@ def insert_trial_data(
         estimated_end_date=trial_estimated_end_date,
         estimated_recruitment=trial_estimated_recruitment,
         last_updated_in_ctis=trial_last_update,
-        ctis_url=f"https://euclinicaltrials.eu/search-for-clinical-trials/?lang=en&EUCT={trial_overview.get('ctNumber')}",
+        ctis_url=f"https://euclinicaltrials.eu/search-for-clinical-trials/?lang=en&EUCT={trial_overview.ctNumber}",
     )
     session.add(trial)
     session.flush()
@@ -417,29 +426,71 @@ def insert_trial_data(
                         product_row.administration_routes.append(route_row)
 
 
-def update_location_coordinates(session) -> None:
+def update_location_coordinates(database_uri: str) -> None:
     """
     Gets lat and lon for all entries in location table that are empty in lat and lon column and updates the table respectivly
 
     Parameter:
-    - session: SQLAlchemy database session
+    - database_uri: SQLAlchemy database connection string in the format: postgresql+psycopg2://username:password@db_ip:db_port/db_name
     """
-    stmt = select(Location).where(Location.latitude == None)
-    result = session.execute(stmt)
-    for loc in result.scalars():
-        lat, lon = get_location_coordinates(
-            street=loc.address,
-            city=loc.city,
-            country=loc.country,
-            postalcode=loc.postcode,
-        )
-        loc.latitude = lat
-        loc.longitude = lon
-        session.commit()
-        time.sleep(1)
+    engine = create_engine(database_uri)
+    Session = sessionmaker(engine)
+
+    with Session() as session:
+        stmt = select(Location).where(Location.latitude == None)
+        result = session.execute(stmt)
+        for loc in result.scalars():
+            lat, lon = get_location_coordinates(
+                street=loc.address,
+                city=loc.city,
+                country=loc.country,
+                postalcode=loc.postcode,
+            )
+            loc.latitude = lat
+            loc.longitude = lon
+            session.commit()
+            time.sleep(1)
 
 
 def insert_update_status(session: Session, update_status: str) -> None:
     row = UpdateHistory(update_time=datetime.now(), status=update_status)
     session.add(row)
     session.commit()
+
+
+def scrape_ctis(database_uri: str) -> None:
+    """
+    Wraps the entire data scraping, parsing and insertion process into a single function.
+
+    Parameter:
+    - database_uri: SQLAlchemy database connection string in the format: postgresql+psycopg2://username:password@db_ip:db_port/db_name
+    """
+    engine = create_engine(database_uri)
+    Session = sessionmaker(engine)
+    total_trial_records = get_total_trial_records()
+    with Session() as session:
+        try:
+            delete_table_entries(
+                session=session,
+                delete_all_except=True,
+                table_names=["location", "update_history"],
+            )
+            session.commit()  # TODO: Do not commit here to keep whole process in one transaction
+            Base.metadata.create_all(engine)
+
+            print("Scraping trial data...")
+            for trial_overview in tqdm(get_trial_overview(), total=total_trial_records):
+                trial_details = get_trial_details(trial_overview.ctNumber)
+                insert_trial_data(
+                    session=session,
+                    trial_overview=trial_overview,
+                    trial_details=trial_details,
+                )
+
+            session.commit()
+            insert_update_status(session, "Update successful")
+
+        except Exception as e:
+            session.rollback()
+            insert_update_status(session, f"Update failed - {type(e).__name__}")
+            raise
