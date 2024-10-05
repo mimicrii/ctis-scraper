@@ -1,5 +1,6 @@
 certifi==2024.7.4
 charset-normalizer==3.3.2
+dacite==1.8.1
 greenlet==3.0.3
 idna==3.7
 psycopg2-binary==2.9.9

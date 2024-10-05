@@ -1,8 +1,6 @@
-import os
 import argparse
 
-from dotenv import load_dotenv
-
+from src.helpers import get_db_uri
 from src.crud import (
     scrape_ctis,
     update_location_coordinates,
@@ -17,13 +15,12 @@ def main():
         help="Mode of operation: 'scrape' or 'update_coordinates'",
     )
     args = parser.parse_args()
-    load_dotenv()  # load dotenv when running locally
-    DATABASE_URI = os.getenv("DATABASE_URI")
+    DATABASE_URI = get_db_uri()
 
     if args.mode == "scrape":
         scrape_ctis(DATABASE_URI)
 
-    elif args.mode == "update":
+    elif args.mode == "update_coordinates":
         update_location_coordinates(DATABASE_URI)
 
 

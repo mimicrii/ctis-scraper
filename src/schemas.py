@@ -147,6 +147,57 @@ thirdpartyduty = Table(
     ),
 )
 
+seriousbreachimpactedarea = Table(
+    "seriousbreachimpactedarea",
+    Base.metadata,
+    Column(
+        "serious_breach_id",
+        ForeignKey("serious_breach.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+    Column(
+        "impacted_area_id",
+        ForeignKey("impacted_area.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+)
+
+seriousbreachcategory = Table(
+    "seriousbreachcategory",
+    Base.metadata,
+    Column(
+        "serious_breach_id",
+        ForeignKey("serious_breach.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+    Column(
+        "category_id",
+        ForeignKey("category.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+)
+
+seriousbreachsites = Table(
+    "seriousbreachsites",
+    Base.metadata,
+    Column(
+        "serious_breach_id",
+        ForeignKey("serious_breach.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+    Column(
+        "site_id",
+        ForeignKey("site.id"),
+        primary_key=True,
+        nullable=False,
+    ),
+)
+
 
 # data tables
 class Trial(Base):
@@ -161,6 +212,7 @@ class Trial(Base):
     eudract_number: Mapped[Optional[str]]
     nct_number: Mapped[Optional[str]]
     status: Mapped[Optional[str]]
+    public_status_code: Mapped[Optional[str]]  # TODO: Decode public status
     phase: Mapped[str]
     age_group: Mapped[Optional[str]]
     gender: Mapped[Optional[str]]
@@ -168,10 +220,15 @@ class Trial(Base):
     estimated_recruitment_start_date: Mapped[Optional[date]]
     decision_date: Mapped[Optional[date]]
     estimated_end_date: Mapped[Optional[date]]
+    start_date_eu: Mapped[Optional[date]]
+    end_date_eu: Mapped[Optional[date]]
     estimated_recruitment: Mapped[Optional[int]]
     last_updated_in_ctis: Mapped[date]
     ctis_url: Mapped[str]
-
+    # n:1
+    serious_breaches: Mapped[List["SeriousBreach"]] = relationship(
+        back_populates="trial"
+    )
     # m:n
     sponsors: Mapped[List["Sponsor"]] = relationship(
         secondary=trialsponsor,
@@ -199,7 +256,7 @@ class Trial(Base):
 class Product(Base):
     __tablename__ = "product"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
-    name: Mapped[Optional[str]]
+    name: Mapped[Optional[str]] = mapped_column(index=True)
     active_substance: Mapped[Optional[str]]
     name_org: Mapped[Optional[str]]
     pharmaceutical_form_display: Mapped[Optional[str]]
@@ -224,7 +281,7 @@ class Product(Base):
 class Substance(Base):
     __tablename__ = "substance"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
-    name: Mapped[str]
+    name: Mapped[str] = mapped_column(index=True)
     ev_code: Mapped[Optional[str]]
     substance_origin: Mapped[Optional[str]]
     act_substance_origin: Mapped[Optional[str]]
@@ -249,10 +306,10 @@ class AdministrationRoute(Base):
 class Sponsor(Base):
     __tablename__ = "sponsor"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
-    name: Mapped[Optional[str]]
+    name: Mapped[Optional[str]] = mapped_column(index=True)
     type: Mapped[Optional[str]]
     is_primary: Mapped[bool]
-    org_id: Mapped[str]
+    org_id: Mapped[str] = mapped_column(index=True)
     # m:n
     trials: Mapped[List["Trial"]] = relationship(
         secondary=trialsponsor, back_populates="sponsors"
@@ -262,7 +319,7 @@ class Sponsor(Base):
 class ThirdParty(Base):
     __tablename__ = "third_party"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
-    name: Mapped[str]
+    name: Mapped[str] = mapped_column(index=True)
     type: Mapped[str]
     is_commercial: Mapped[bool]
     org_id: Mapped[Optional[str]]
@@ -314,18 +371,21 @@ class Condition(Base):
 class Site(Base):
     __tablename__ = "site"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
-    name: Mapped[Optional[str]]
+    name: Mapped[Optional[str]] = mapped_column(index=True)
     type: Mapped[Optional[str]]
     commercial: Mapped[Optional[bool]]
     phone: Mapped[Optional[str]]
     email: Mapped[Optional[str]]
-    org_id: Mapped[Optional[str]]
+    org_id: Mapped[Optional[str]] = mapped_column(index=True)
     location_id = mapped_column(ForeignKey("location.id"), nullable=False)
     # 1:n
     location: Mapped["Location"] = relationship(back_populates="sites")
     # m:n
     trials: Mapped[List["Trial"]] = relationship(
         secondary=trialsite, back_populates="sites"
+    )
+    serious_breaches: Mapped[List["SeriousBreach"]] = relationship(
+        secondary=seriousbreachsites, back_populates="sites"
     )
 
 
@@ -344,6 +404,51 @@ class Location(Base):
     # 1:n
     sites: Mapped[List["Site"]] = relationship(back_populates="location")
     third_parties: Mapped[List["ThirdParty"]] = relationship(back_populates="location")
+
+
+class ImpactedArea(Base):
+    __tablename__ = "impacted_area"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    name: Mapped[str]
+    # m:n
+    serious_breaches: Mapped[List["SeriousBreach"]] = relationship(
+        secondary=seriousbreachimpactedarea, back_populates="impacted_areas"
+    )
+
+
+class Category(Base):
+    __tablename__ = "category"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    name: Mapped[str]
+    # m:n
+    serious_breaches: Mapped[List["SeriousBreach"]] = relationship(
+        secondary=seriousbreachcategory, back_populates="categories"
+    )
+
+
+class SeriousBreach(Base):
+    __tablename__ = "serious_breach"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    aware_date: Mapped[Optional[date]]
+    breach_date: Mapped[Optional[date]]
+    submission_date: Mapped[Optional[date]]
+    updated_on: Mapped[Optional[date]]
+    description: Mapped[Optional[str]]
+    actions_taken: Mapped[Optional[str]]
+    benefit_risk_balance_changed: Mapped[bool]
+    trial_id = mapped_column(ForeignKey("trial.id"), nullable=False)
+    # 1:n
+    trial: Mapped["Trial"] = relationship(back_populates="serious_breaches")
+    # m:n
+    impacted_areas: Mapped[List["ImpactedArea"]] = relationship(
+        secondary=seriousbreachimpactedarea, back_populates="serious_breaches"
+    )
+    categories: Mapped[List["Category"]] = relationship(
+        secondary=seriousbreachcategory, back_populates="serious_breaches"
+    )
+    sites: Mapped[List["Site"]] = relationship(
+        secondary=seriousbreachsites, back_populates="serious_breaches"
+    )
 
 
 class UpdateHistory(Base):

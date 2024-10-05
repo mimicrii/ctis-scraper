@@ -1,11 +1,13 @@
-import requests
 import json
-import yaml
 from typing import Iterator, Tuple, Final
 from dataclasses import dataclass
 
-from src.helpers import convert_date_format, validate_response
-from src.parse import TrialOverview
+import requests
+import yaml
+from dacite import from_dict, Config
+
+from src.helpers import validate_response
+from src.parse import TrialOverview, FullTrial
 
 with open("config.yaml", "r") as file:
     config = yaml.safe_load(file)
@@ -22,16 +24,17 @@ OVERVIEW_HEADERS: Final[str] = {
     "Connection": "keep-alive",
     "Referer": "https://euclinicaltrials.eu/ctis-public/search?lang=en",
 }
+
 GEOCODING_URL: Final[str] = f"https://nominatim.openstreetmap.org/search"
 GEOCODING_HEADERS: dict = config["api"]["geocoding"]["headers"]
 
 
 def get_trial_overview() -> Iterator[TrialOverview]:
     """
-    Generate a generator that yields trial overviews.
+    Generate a generator that yields TrialOverview dataclasses.
 
     This function paginates through the API results, processing each page
-    and yielding individual trial overviews. Handles pagination by
+    and parsing data into TrialOverview dataclass and yielding it. Handles pagination by
     incrementing the page number and checking for the availability of
     the next page.
 
@@ -49,7 +52,11 @@ def get_trial_overview() -> Iterator[TrialOverview]:
         )
         json_data = validate_response(r)
         for trial in json_data["data"]:
-            trial_overview = TrialOverview(**trial)
+            trial_overview = from_dict(
+                data=trial,
+                data_class=TrialOverview,
+                config=Config(check_types=False, strict=True),
+            )
             yield trial_overview
 
         page += 1
@@ -68,17 +75,26 @@ def get_total_trial_records() -> int:
     return total_trials
 
 
-def get_trial_details(ct_number: str) -> dict:
+def get_full_trial(ct_number: str) -> FullTrial:
     """
-    Return the response with trial details of a single trial.
+    Requests the trial design api endpoint to get the trial design of a single trial and parses json data to TrialDesign dataclass.
 
     Parameter:
     - ct_number: The ct number identifier of a trial listed in the ctis portal.
+
+    Returns:
+    - full_trial: An instance of the FullTrial dataclass
     """
-    details_url = f"https://euclinicaltrials.eu/ctis-public-api/retrieve/{ct_number}"
-    r = requests.get(details_url)
+    full_trial_url = f"https://euclinicaltrials.eu/ctis-public-api/retrieve/{ct_number}"
+    r = requests.get(full_trial_url)
     json_data = validate_response(r)
-    return json_data
+
+    full_trial = from_dict(
+        FullTrial,
+        json_data,
+        config=Config(check_types=False, strict=False),
+    )
+    return full_trial
 
 
 def get_location_coordinates(
@@ -92,6 +108,9 @@ def get_location_coordinates(
     - city: Location city
     - country: Location country
     - postalcode: Location postalcode
+
+    Returns:
+    - A tuple containing lat and lon coordinates if coordinates were found. Returns a tuple containing None, None otherwise.
     """
 
     params = {

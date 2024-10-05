@@ -1,6 +1,6 @@
 import time
 from datetime import datetime
-from typing import TypeVar, cast, List
+from typing import TypeVar, cast, List, Final, Dict
 
 import yaml
 from sqlalchemy import MetaData, select, text, create_engine
@@ -20,21 +20,29 @@ from src.schemas import (
     Condition,
     Site,
     Location,
+    SeriousBreach,
+    Category,
+    ImpactedArea,
     UpdateHistory,
 )
-from src.parse import TrialOverview
-from src.helpers import timestamp_to_date, country_to_iso_codes, convert_date_format
+from src.parse import TrialOverview, FullTrial
+from src.helpers import timestamp_to_date, country_to_iso_codes, decode_third_party_duty
 from src.api import (
     get_location_coordinates,
     get_total_trial_records,
     get_trial_overview,
-    get_trial_details,
+    get_full_trial,
 )
 
 Model = TypeVar("Model")
 
 with open("decodings.yaml", "r") as file:
-    decodings = yaml.safe_load(file)
+    DECODINGS = yaml.safe_load(file)
+
+with open("config.yaml", "r") as file:
+    CONFIG = yaml.safe_load(file)
+
+THIRD_PARTY_DUTY_DECODINGS: Final[Dict] = DECODINGS["third_party_duty"]
 
 
 def get_or_create(session: Session, model: Model, defaults=None, **kwargs) -> Model:
@@ -66,15 +74,19 @@ def get_or_create(session: Session, model: Model, defaults=None, **kwargs) -> Mo
 
 
 def delete_table_entries(
-    session: Session, table_names: List[str], delete_all_except: bool = False
+    session: Session,
+    table_names: List[str],
+    dialect: str,
+    delete_all_except: bool = False,
 ) -> None:
     """
-    Drop tables with CASCADE from the specified tables or from all tables except the specified ones in the database.
+    Drop tables from the specified tables or from all tables except the specified ones in the database.
     Committing changes has to be handled outside the function.
 
     Parameter:
     - session: SQLAlchemy database session.
     - table_names (list): List of table names to drop.
+    - dialect (str): SQL dialect (e.g., "sqlite", "postgresql", "mysql").
     - delete_all_except (bool): If True, drop all tables except those specified.
                                 If False, drop only the specified tables.
     """
@@ -91,67 +103,68 @@ def delete_table_entries(
         ]
 
     for table in tables_to_delete:
-        print(f"Dropping table '{table.name}' with CASCADE ...")
-        session.execute(text(f"DROP TABLE {table.name} CASCADE"))
+        if dialect in ["sqlite"]:
+            print(f"Dropping table '{table.name}' without CASCADE for SQLite...")
+            session.execute(text(f"DROP TABLE {table.name}"))
+        elif dialect in ["postgresql", "mysql", "oracle"]:
+            print(f"Dropping table '{table.name}' with CASCADE...")
+            session.execute(text(f"DROP TABLE {table.name} CASCADE"))
+        else:
+            print(f"Dialect '{dialect}' not recognized. Skipping table '{table.name}'.")
 
     if not tables_to_delete:
         print("No tables matched the given criteria.")
 
 
 def insert_trial_data(
-    session: Session, trial_overview: TrialOverview, trial_details: dict
+    session: Session, trial_overview: TrialOverview, full_trial: FullTrial
 ) -> None:
     """
     Inserts scraped trial data into database.
 
     Parameter:
-    - trial_overview: Overview of trial scraped from overview api endpoint.
-    - trial_details: Trial details. Full response from the trial details api endpoint.
+    - trial_overview: Instance of TrialOverview dataclass. Overview of trial scraped from overview api endpoint.
+    - full_trial: Instance of FullTrial dataclass. Detailed information scraped from the trial details api endpoint.
     """
 
-    trial_info = (
-        trial_details.get("authorizedApplication")
-        .get("authorizedPartI")
-        .get("trialDetails")
-    )
+    trial_details = full_trial.authorizedApplication.authorizedPartI.trialDetails
 
     trial_title = trial_overview.ctTitle
-    trial_short_title = trial_info.get("clinicalTrialIdentifiers").get("shortTitle")
+    trial_short_title = trial_details.clinicalTrialIdentifiers.shortTitle
     trial_ct_number = trial_overview.ctNumber
-    is_trial_transitioned = (
-        trial_details.get("authorizedApplication")
-        .get("eudraCt", {})
-        .get("isTransitioned")
-    )
-    trial_eudract = (
-        trial_details.get("authorizedApplication").get("eudraCt", {}).get("eudraCtCode")
-    )
+    is_trial_transitioned = full_trial.authorizedApplication.eudraCt.isTransitioned
+    trial_eudract = full_trial.authorizedApplication.eudraCt.eudraCtCode
     trial_nct = (
-        trial_info.get("clinicalTrialIdentifiers")
-        .get("secondaryIdentifyingNumbers")
-        .get("nctNumber", {})
-        .get("number")
+        trial_details.clinicalTrialIdentifiers.secondaryIdentifyingNumbers.nctNumber.number
     )
-    trial_status = trial_details.get("ctStatus")
+    trial_status = full_trial.ctStatus
+    trial_public_status_code = full_trial.ctPublicStatusCode
     trial_phase = trial_overview.trialPhase
     trial_age_group = trial_overview.ageGroup
     trial_gender = trial_overview.gender
     trial_region = trial_overview.trialRegion
     trial_recruitment_start_date = (
-        trial_info.get("trialInformation")
-        .get("trialDuration")
-        .get("estimatedRecruitmentStartDate")
+        trial_details.trialInformation.trialDuration.estimatedRecruitmentStartDate
     )
-    trial_decision_date = timestamp_to_date(trial_details.get("decisionDate"))
+    trial_recruitment_start_date = datetime.strptime(
+        trial_recruitment_start_date, "%Y-%m-%d"
+    ).date()
+    trial_decision_date = timestamp_to_date(full_trial.decisionDate)
     trial_estimated_end_date = (
-        trial_info.get("trialInformation").get("trialDuration").get("estimatedEndDate")
+        trial_details.trialInformation.trialDuration.estimatedEndDate
     )
+    trial_end_date_eu = full_trial.endDateEU
+    if trial_end_date_eu:
+        trial_end_date_eu = datetime.strptime(trial_end_date_eu, "%Y-%m-%d").date()
+    trial_start_date_eu = full_trial.startDateEU
+    if trial_start_date_eu:
+        trial_start_date_eu = datetime.strptime(trial_start_date_eu, "%Y-%m-%d").date()
+    trial_estimated_end_date = datetime.strptime(
+        trial_estimated_end_date, "%Y-%m-%d"
+    ).date()
     trial_estimated_recruitment = trial_overview.totalNumberEnrolled
-    trial_last_update = convert_date_format(
-        trial_overview.lastUpdated,
-        input_format="%d/%m/%Y",
-        output_format="%Y-%m-%d",
-    )
+    trial_last_update = trial_overview.lastUpdated
+    trial_last_update = datetime.strptime(trial_last_update, "%d/%m/%Y").date()
 
     trial = Trial(
         title=trial_title,
@@ -161,6 +174,7 @@ def insert_trial_data(
         eudract_number=trial_eudract,
         nct_number=trial_nct,
         status=trial_status,
+        public_status_code=trial_public_status_code,
         phase=trial_phase,
         age_group=trial_age_group,
         gender=trial_gender,
@@ -168,6 +182,8 @@ def insert_trial_data(
         estimated_recruitment_start_date=trial_recruitment_start_date,
         decision_date=trial_decision_date,
         estimated_end_date=trial_estimated_end_date,
+        start_date_eu=trial_start_date_eu,
+        end_date_eu=trial_end_date_eu,
         estimated_recruitment=trial_estimated_recruitment,
         last_updated_in_ctis=trial_last_update,
         ctis_url=f"https://euclinicaltrials.eu/search-for-clinical-trials/?lang=en&EUCT={trial_overview.ctNumber}",
@@ -176,32 +192,23 @@ def insert_trial_data(
     session.flush()
 
     trial_sites = []
-    authorized_parts_2 = trial_details.get("authorizedApplication").get(
-        "authorizedPartsII"
-    )
+    authorized_parts_2 = full_trial.authorizedApplication.authorizedPartsII
+
     for part in authorized_parts_2:
-        sites = part.get("trialSites")
+        sites = part.trialSites
         trial_sites = trial_sites + sites
 
     for site in trial_sites:
-        site_name = site.get("organisationAddressInfo").get("organisation").get("name")
-        site_type = site.get("organisationAddressInfo").get("organisation").get("type")
-        is_site_commercial = (
-            site.get("organisationAddressInfo").get("organisation").get("false")
-        )
-        site_phone = site.get("organisationAddressInfo").get("phone")
-        site_email = site.get("organisationAddressInfo").get("email")
-        site_org_id = site.get("organisationAddressInfo").get("businessKey")
-        site_address = (
-            site.get("organisationAddressInfo").get("address").get("addressLine1")
-        )
-        site_city = site.get("organisationAddressInfo").get("address").get("city")
-        site_postcode = (
-            site.get("organisationAddressInfo").get("address").get("postcode")
-        )
-        site_country = (
-            site.get("organisationAddressInfo").get("address").get("countryName")
-        )
+        site_name = site.organisationAddressInfo.organisation.name
+        site_type = site.organisationAddressInfo.organisation.type
+        is_site_commercial = site.organisationAddressInfo.organisation.commercial
+        site_phone = site.organisationAddressInfo.phone
+        site_email = site.organisationAddressInfo.email
+        site_org_id = site.organisationAddressInfo.organisation.businessKey
+        site_address = site.organisationAddressInfo.address.addressLine1
+        site_city = site.organisationAddressInfo.address.city
+        site_postcode = site.organisationAddressInfo.address.postcode
+        site_country = site.organisationAddressInfo.address.countryName
 
         site_location_row = get_or_create(
             session,
@@ -232,92 +239,54 @@ def insert_trial_data(
             trial.sites.append(site_row)
 
     therapeutic_areas = (
-        trial_details.get("authorizedApplication")
-        .get("authorizedPartI")
-        .get("therapeuticAreas")
+        full_trial.authorizedApplication.authorizedPartI.therapeuticAreas
     )
+
     for ta in therapeutic_areas:
-        ta_row = get_or_create(session, TherapeuticArea, name=ta.get("name"))
+        ta_row = get_or_create(session, TherapeuticArea, name=ta.name)
         if ta_row not in trial.therapeutic_areas:
             trial.therapeutic_areas.append(ta_row)
 
     medical_conditions = (
-        trial_details.get("authorizedApplication")
-        .get("authorizedPartI")
-        .get("trialDetails")
-        .get("trialInformation")
-        .get("medicalCondition")
-        .get("partIMedicalConditions")
+        trial_details.trialInformation.medicalCondition.partIMedicalConditions
     )
     for cond in medical_conditions:
         cond_row = get_or_create(
             session,
             Condition,
-            name=cond.get("medicalCondition"),
+            name=cond.medicalCondition,
         )
         if cond_row not in trial.conditions:
             trial.conditions.append(cond_row)
 
-    sponsors = (
-        trial_details.get("authorizedApplication")
-        .get("authorizedPartI")
-        .get("sponsors")
-    )
+    sponsors = full_trial.authorizedApplication.authorizedPartI.sponsors
     for sponsor in sponsors:
         sponsor_row = get_or_create(
             session,
             Sponsor,
             defaults={
-                "name": sponsor.get("organisation").get("name"),
-                "type": sponsor.get("organisation").get("type"),
-                "is_primary": sponsor.get("primary"),
+                "name": sponsor.organisation.name,
+                "type": sponsor.organisation.type,
             },
-            org_id=sponsor.get("organisation").get("businessKey"),
+            is_primary=sponsor.primary,
+            org_id=sponsor.organisation.businessKey,
         )
         if sponsor_row not in trial.sponsors:
             trial.sponsors.append(sponsor_row)
 
-        third_parties = sponsor.get("thirdParties")
+        third_parties = sponsor.thirdParties
         if third_parties:
             for third_party in third_parties:
-                tp_name = (
-                    third_party.get("organisationAddress")
-                    .get("organisation")
-                    .get("name")
-                )
-                tp_type = (
-                    third_party.get("organisationAddress")
-                    .get("organisation")
-                    .get("type")
-                )
+                tp_name = third_party.organisationAddress.organisation.name
+                tp_type = third_party.organisationAddress.organisation.type
                 tp_is_commercial = (
-                    third_party.get("organisationAddress")
-                    .get("organisation")
-                    .get("commercial")
+                    third_party.organisationAddress.organisation.commercial
                 )
-                tp_org_id = (
-                    third_party.get("organisationAddress")
-                    .get("organisation")
-                    .get("businessKey")
-                )
-                tp_address = (
-                    third_party.get("organisationAddress")
-                    .get("address")
-                    .get("addressLine1")
-                )
-                tp_city = (
-                    third_party.get("organisationAddress").get("address").get("city")
-                )
-                tp_country = (
-                    third_party.get("organisationAddress")
-                    .get("address")
-                    .get("countryName")
-                )
-                tp_postcode = (
-                    third_party.get("organisationAddress")
-                    .get("address")
-                    .get("postcode")
-                )
+                tp_org_id = third_party.organisationAddress.organisation.businessKey
+                tp_address = third_party.organisationAddress.address.addressLine1
+                tp_city = third_party.organisationAddress.address.city
+                tp_country = third_party.organisationAddress.address.countryName
+                tp_postcode = third_party.organisationAddress.address.postcode
 
                 tp_location_row = get_or_create(
                     session,
@@ -342,41 +311,32 @@ def insert_trial_data(
                 if third_party_row not in trial.third_parties:
                     trial.third_parties.append(third_party_row)
 
-                tp_duties = third_party.get("sponsorDuties")
-                duty_decoding = decodings["third_party_duty"]
-
+                tp_duties = third_party.sponsorDuties
                 if tp_duties:
                     for duty in tp_duties:
-                        duty_code = duty.get("code")
+                        duty_code = duty.code
+                        duty_value = decode_third_party_duty(
+                            duty, THIRD_PARTY_DUTY_DECODINGS
+                        )
                         duty_row = get_or_create(
-                            session, Duty, code=duty_code, name=duty_decoding[duty_code]
+                            session, Duty, code=duty_code, name=duty_value
                         )
                         if duty_row not in third_party_row.duties:
                             third_party_row.duties.append(duty_row)
 
-    products = (
-        trial_details.get("authorizedApplication")
-        .get("authorizedPartI")
-        .get("products")
-    )
+    products = full_trial.authorizedApplication.authorizedPartI.products
     if products:
         for product in products:
-            p_name = product.get("productDictionaryInfo").get("prodName")
-            p_active_substance = product.get("productDictionaryInfo").get(
-                "activeSubstanceName"
-            )
-            p_name_org = product.get("productDictionaryInfo").get("nameOrg")
-            p_pharmaceutical_form_display = product.get("pharmaceuticalFormDisplay")
-            p_is_paediatric_formulation = product.get("isPaediatricFormulation")
-            p_role_in_trial_code = product.get(
-                "mpRoleInTrial"
-            )  # TODO: Decode role code
-            p_orphan_drug = product.get("orphanDrugEdit")
-            p_ev_code = product.get("evCode")
-            p_eu_mp_number = product.get("productDictionaryInfo").get("euMpNumber")
-            p_sponsor_product_code = product.get("productDictionaryInfo").get(
-                "sponsorProductCode"
-            )
+            p_name = product.productName
+            p_active_substance = product.productDictionaryInfo.activeSubstanceName
+            p_name_org = product.productDictionaryInfo.nameOrg
+            p_pharmaceutical_form_display = product.pharmaceuticalFormDisplay
+            p_is_paediatric_formulation = product.isPaediatricFormulation
+            p_role_in_trial_code = product.mpRoleInTrial  # TODO: Decode role code
+            p_orphan_drug = product.orphanDrugEdit
+            p_ev_code = product.evCode
+            p_eu_mp_number = product.productDictionaryInfo.euMpNumber
+            p_sponsor_product_code = product.productDictionaryInfo.sponsorProductCode
 
             product_row = get_or_create(
                 session,
@@ -395,15 +355,15 @@ def insert_trial_data(
             if product_row not in trial.products:
                 trial.products.append(product_row)
 
-            substances = product.get("productDictionaryInfo").get("productSubstances")
+            substances = product.productDictionaryInfo.productSubstances
             if substances:
                 for substance in substances:
-                    s_name = substance.get("actSubstName")
-                    s_ev_code = substance.get("substanceEvCode")
-                    s_origin = substance.get("substanceOrigin")
-                    s_act_substance_origin = substance.get("actSubstOrigin")
-                    s_product_pk = substance.get("productPk")
-                    s_pk = substance.get("substancePk")
+                    s_name = substance.actSubstName
+                    s_ev_code = substance.substanceEvCode
+                    s_origin = substance.substanceOrigin
+                    s_act_substance_origin = substance.actSubstOrigin
+                    s_product_pk = substance.productPk
+                    s_pk = substance.substancePk
 
                     substance_row = get_or_create(
                         session,
@@ -418,12 +378,82 @@ def insert_trial_data(
                     if substance_row not in product_row.substances:
                         product_row.substances.append(substance_row)
 
-            administration_routes = product.get("routes")
+            administration_routes = product.routes
             if administration_routes:
                 for route in administration_routes:
                     route_row = get_or_create(session, AdministrationRoute, name=route)
                     if route_row not in product_row.administration_routes:
                         product_row.administration_routes.append(route_row)
+
+    serious_breaches = full_trial.events.seriousBreaches
+    if serious_breaches:
+        for sb in serious_breaches:
+            sb_aware_date = (
+                datetime.strptime(sb.awareDate, "%Y-%m-%d").date()
+                if sb.awareDate
+                else None
+            )
+            sb_breach_date = (
+                datetime.strptime(sb.breachDate, "%Y-%m-%d").date()
+                if sb.breachDate
+                else None
+            )
+            sb_subm_date = (
+                datetime.strptime(sb.submissionDate, "%Y-%m-%d").date()
+                if sb.submissionDate
+                else None
+            )
+            sb_updated_on = (
+                datetime.strptime(sb.updatedOn, "%Y-%m-%d").date()
+                if sb.updatedOn
+                else None
+            )
+            sb_description = sb.description
+            sb_actions_taken = sb.actionsTaken
+            sb_benefit_risk_balanced_changed = sb.isBenefitRiskBalanceChanged
+            sb_impacted_areas = sb.impactedAreaList
+            sb_categories = sb.categories
+            sb_sites = sb.seriousBreachSites
+
+            sb_row = get_or_create(
+                session,
+                SeriousBreach,
+                aware_date=sb_aware_date,
+                breach_date=sb_breach_date,
+                submission_date=sb_subm_date,
+                updated_on=sb_updated_on,
+                description=sb_description,
+                actions_taken=sb_actions_taken,
+                benefit_risk_balance_changed=sb_benefit_risk_balanced_changed,
+                trial=trial,
+            )
+            if sb_row not in trial.serious_breaches:
+                trial.serious_breaches.append(sb_row)
+
+            if sb_impacted_areas:
+                for area in sb_impacted_areas:
+                    impacted_area_row = get_or_create(session, ImpactedArea, name=area)
+                    if impacted_area_row not in sb_row.impacted_areas:
+                        sb_row.impacted_areas.append(impacted_area_row)
+
+            if sb_categories:
+                for category in sb_categories:
+                    category_row = get_or_create(session, Category, name=category.name)
+                    if category_row not in sb_row.categories:
+                        sb_row.categories.append(category_row)
+
+            if sb_sites:
+                for sb_site in sb_sites:
+                    corresponding_site = (
+                        session.query(Site)
+                        .filter(
+                            Site.org_id == sb_site.organisationAddressInfo.businessKey
+                        )
+                        .first()
+                    )
+                    print(sb_site.organisationAddressInfo.organisation.businessKey)
+                    if corresponding_site and corresponding_site not in sb_row.sites:
+                        sb_row.sites.append(corresponding_site)
 
 
 def update_location_coordinates(database_uri: str) -> None:
@@ -468,24 +498,36 @@ def scrape_ctis(database_uri: str) -> None:
     engine = create_engine(database_uri)
     Session = sessionmaker(engine)
     total_trial_records = get_total_trial_records()
+    environment = CONFIG["environment"]
+    if environment == "dev":
+        sql_dialect = "sqlite"
+    elif environment == "prod":
+        sql_dialect = "postgresql"
+    else:
+        raise ValueError(
+            f"Wrong environment configuration ({environment}). Choose either 'dev' or 'prod'"
+        )
+
     with Session() as session:
         try:
             delete_table_entries(
                 session=session,
                 delete_all_except=True,
                 table_names=["location", "update_history"],
+                dialect=sql_dialect,
             )
             session.commit()  # TODO: Do not commit here to keep whole process in one transaction
             Base.metadata.create_all(engine)
 
             print("Scraping trial data...")
             for trial_overview in tqdm(get_trial_overview(), total=total_trial_records):
-                trial_details = get_trial_details(trial_overview.ctNumber)
+                full_trial = get_full_trial(trial_overview.ctNumber)
                 insert_trial_data(
                     session=session,
                     trial_overview=trial_overview,
-                    trial_details=trial_details,
+                    full_trial=full_trial,
                 )
+                session.commit()
 
             session.commit()
             insert_update_status(session, "Update successful")
