@@ -1,4 +1,4 @@
-environment: "dev" # dev or prod
+environment: "prod" # dev or prod
 api:
   overview: 
     payload:
@@ -7,7 +7,7 @@ api:
         size: 100
       sort:
         property: "decisionDate"
-        direction: "ASC"
+        direction: "DESC"
       searchCriteria:
         containAll: null
         containAny: null
