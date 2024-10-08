@@ -13,6 +13,7 @@ This project is a Python-based web scraper that uses the European Clinical Trial
 - schemas.py: Defines the database schema.
 - crud.py: Contains CRUD operations.
 - api.py: Handles API calls to the target website.
+- parse.py: Contains dataclasses to parse api responses.
 - Dockerfile: Configuration file to build a Docker image of the project.
 
 ## Installation
@@ -70,7 +71,7 @@ Use this repo's prebuilt image:
 docker run --rm -e DATABASE_URI=your_database_uri ghcr.io/mimicrii/ctis-scraper:latest
 ```
 ### Updating Location Coordinates
-In the location table, there is a latitude and longitude column. By default, those columns stay empty as CTIS itself doesn't provide any coordinates. However, if you plan on working with coordinates, you can update these columns using the OpenStreetMap Nominatim Geocoding API by providing the update_coordinates argument when running the project. 
+In the location table, there is a latitude and longitude column. By default, those columns stay empty as CTIS itself doesn't provide any coordinates. However, if you plan on working with coordinates, you can update these columns using the OpenStreetMap Nominatim Geocoding API by providing the update_coordinates argument when running the project.
 ```bash
 python main.py update_coordinates
 ```
@@ -80,7 +81,10 @@ docker run --rm -e DATABASE_URI=your_database_uri your_image_name update_coordin
 The coordinates are stored persistently in the database so that they are retained even if the actual scraper script is run regularly.
 
 ## Database
-This project was developed using a PostgreSQL database. Using a different SQL dialect should not be a problem. However, the database URI must be adapted accordingly and, depending on the dialect, the database schema in schemas.py must be adapted.
+This project was tested with PostgreSQL and sqlite. Using a different SQL dialect should not be a problem. However, the database URI must be adapted accordingly and, depending on the dialect, the database schema in schemas.py must be adapted.
+
+## Further Configuration
+Adjusting the payload provided in config.yaml trials in the overview api response can be filtered down to only include a desired subset of trials.
 
 ## Contributing
 Contributions are welcome! Please fork the repository and submit a pull request.

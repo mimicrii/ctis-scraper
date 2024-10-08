@@ -146,7 +146,7 @@ class ProductDictionaryInfo:
     productPharmForm: Optional[str]
     euMpNumber: str
     pharmForm: Optional[str]
-    activeSubstanceName: str
+    activeSubstanceName: Optional[str]
     nameOrg: Optional[str]
     activeSubstanceOtherDescriptiveName: str
     sponsorProductCode: Optional[str]

@@ -451,7 +451,6 @@ def insert_trial_data(
                         )
                         .first()
                     )
-                    print(sb_site.organisationAddressInfo.organisation.businessKey)
                     if corresponding_site and corresponding_site not in sb_row.sites:
                         sb_row.sites.append(corresponding_site)
 
@@ -527,7 +526,6 @@ def scrape_ctis(database_uri: str) -> None:
                     trial_overview=trial_overview,
                     full_trial=full_trial,
                 )
-                session.commit()
 
             session.commit()
             insert_update_status(session, "Update successful")
