@@ -281,7 +281,7 @@ class Product(Base):
 class Substance(Base):
     __tablename__ = "substance"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
-    name: Mapped[str] = mapped_column(index=True)
+    name: Mapped[Optional[str]] = mapped_column(index=True)
     ev_code: Mapped[Optional[str]]
     substance_origin: Mapped[Optional[str]]
     act_substance_origin: Mapped[Optional[str]]
