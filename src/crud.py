@@ -80,15 +80,15 @@ def delete_table_entries(
     delete_all_except: bool = False,
 ) -> None:
     """
-    Drop tables from the specified tables or from all tables except the specified ones in the database.
+    Delete all entries from the specified tables or from all tables except the specified ones in the database.
     Committing changes has to be handled outside the function.
 
     Parameter:
     - session: SQLAlchemy database session.
-    - table_names (list): List of table names to drop.
+    - table_names (list): List of table names to delete entries from.
     - dialect (str): SQL dialect (e.g., "sqlite", "postgresql", "mysql").
-    - delete_all_except (bool): If True, drop all tables except those specified.
-                                If False, drop only the specified tables.
+    - delete_all_except (bool): If True, delete entries from all tables except those specified.
+                                If False, delete entries only from the specified tables.
     """
     metadata = MetaData()
     metadata.reflect(bind=session.bind)
@@ -103,14 +103,8 @@ def delete_table_entries(
         ]
 
     for table in tables_to_delete:
-        if dialect in ["sqlite"]:
-            print(f"Dropping table '{table.name}' without CASCADE for SQLite...")
-            session.execute(text(f"DROP TABLE {table.name}"))
-        elif dialect in ["postgresql", "mysql", "oracle"]:
-            print(f"Dropping table '{table.name}' with CASCADE...")
-            session.execute(text(f"DROP TABLE {table.name} CASCADE"))
-        else:
-            print(f"Dialect '{dialect}' not recognized. Skipping table '{table.name}'.")
+        print(f"Deleting all entries from table '{table.name}'...")
+        session.execute(text(f"DELETE FROM {table.name}"))
 
     if not tables_to_delete:
         print("No tables matched the given criteria.")
@@ -515,10 +509,9 @@ def scrape_ctis(database_uri: str) -> None:
                 table_names=["location", "update_history"],
                 dialect=sql_dialect,
             )
-            session.commit()  # TODO: Do not commit here to keep whole process in one transaction
+            session.flush()
             Base.metadata.create_all(engine)
 
-            print("Scraping trial data...")
             for trial_overview in tqdm(get_trial_overview(), total=total_trial_records):
                 full_trial = get_full_trial(trial_overview.ctNumber)
                 insert_trial_data(
@@ -526,6 +519,8 @@ def scrape_ctis(database_uri: str) -> None:
                     trial_overview=trial_overview,
                     full_trial=full_trial,
                 )
+                if CONFIG["environment"] == "dev":
+                    session.commit()
 
             session.commit()
             insert_update_status(session, "Update successful")
