@@ -45,5 +45,5 @@ api:
         mscStatus: null
   geocoding:
     headers:
-      User-Agent": "clinicaltrials/0.0.1"
+      User-Agent": "ctis-scraper 1.0"
 

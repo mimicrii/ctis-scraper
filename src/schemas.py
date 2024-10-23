@@ -227,29 +227,28 @@ class Trial(Base):
     ctis_url: Mapped[str]
     # n:1
     serious_breaches: Mapped[List["SeriousBreach"]] = relationship(
-        back_populates="trial"
+        back_populates="trial", cascade="all, delete"
     )
     # m:n
     sponsors: Mapped[List["Sponsor"]] = relationship(
-        secondary=trialsponsor,
-        back_populates="trials",
+        secondary=trialsponsor, back_populates="trials", cascade="all, delete"
     )
     third_parties: Mapped[List["ThirdParty"]] = relationship(
-        secondary=trialthirdparty,
-        back_populates="trials",
+        secondary=trialthirdparty, back_populates="trials", cascade="all, delete"
     )
     conditions: Mapped[List["Condition"]] = relationship(
-        secondary=trialcondition, back_populates="trials"
+        secondary=trialcondition, back_populates="trials", cascade="all, delete"
     )
     sites: Mapped[List["Site"]] = relationship(
-        secondary=trialsite, back_populates="trials"
+        secondary=trialsite, back_populates="trials", cascade="all, delete"
     )
     products: Mapped[List["Product"]] = relationship(
-        secondary=trialproduct, back_populates="trials"
+        secondary=trialproduct, back_populates="trials", cascade="all, delete"
     )
     therapeutic_areas: Mapped[List["TherapeuticArea"]] = relationship(
         secondary=trialtherapeuticarea,
         back_populates="trials",
+        cascade="all, delete",
     )
 
 
@@ -271,10 +270,14 @@ class Product(Base):
         secondary=trialproduct, back_populates="products"
     )
     substances: Mapped[List["Substance"]] = relationship(
-        secondary=productsubstance, back_populates="products"
+        secondary=productsubstance,
+        back_populates="products",
+        cascade="all, delete",
     )
     administration_routes: Mapped[List["AdministrationRoute"]] = relationship(
-        secondary=productadministrationroutes, back_populates="products"
+        secondary=productadministrationroutes,
+        back_populates="products",
+        cascade="all, delete",
     )
 
 
@@ -289,7 +292,9 @@ class Substance(Base):
     substance_pk: Mapped[Optional[str]]
     # m:n
     products: Mapped[List["Product"]] = relationship(
-        secondary=productsubstance, back_populates="substances"
+        secondary=productsubstance,
+        back_populates="substances",
+        cascade="all, delete",
     )
 
 
@@ -299,7 +304,8 @@ class AdministrationRoute(Base):
     name: Mapped[str]
     # m:n
     products: Mapped[List["Product"]] = relationship(
-        secondary=productadministrationroutes, back_populates="administration_routes"
+        secondary=productadministrationroutes,
+        back_populates="administration_routes",
     )
 
 
@@ -325,13 +331,18 @@ class ThirdParty(Base):
     org_id: Mapped[Optional[str]]
     location_id = mapped_column(ForeignKey("location.id"), nullable=False)
     # 1:n
-    location: Mapped["Location"] = relationship(back_populates="third_parties")
+    location: Mapped["Location"] = relationship(
+        back_populates="third_parties", cascade="all, delete"
+    )
     # m:n
     trials: Mapped[List["Trial"]] = relationship(
-        secondary=trialthirdparty, back_populates="third_parties"
+        secondary=trialthirdparty,
+        back_populates="third_parties",
     )
     duties: Mapped[List["Duty"]] = relationship(
-        secondary=thirdpartyduty, back_populates="third_parties"
+        secondary=thirdpartyduty,
+        back_populates="third_parties",
+        cascade="all, delete",
     )
 
 
@@ -342,7 +353,8 @@ class Duty(Base):
     code: Mapped[int]
     # m:n
     third_parties: Mapped[List["ThirdParty"]] = relationship(
-        secondary=thirdpartyduty, back_populates="duties"
+        secondary=thirdpartyduty,
+        back_populates="duties",
     )
 
 
@@ -379,13 +391,16 @@ class Site(Base):
     org_id: Mapped[Optional[str]] = mapped_column(index=True)
     location_id = mapped_column(ForeignKey("location.id"), nullable=False)
     # 1:n
-    location: Mapped["Location"] = relationship(back_populates="sites")
+    location: Mapped["Location"] = relationship(
+        back_populates="sites",
+    )
     # m:n
     trials: Mapped[List["Trial"]] = relationship(
-        secondary=trialsite, back_populates="sites"
+        secondary=trialsite,
     )
     serious_breaches: Mapped[List["SeriousBreach"]] = relationship(
-        secondary=seriousbreachsites, back_populates="sites"
+        secondary=seriousbreachsites,
+        back_populates="sites",
     )
 
 
@@ -401,6 +416,7 @@ class Location(Base):
     location_one_line: Mapped[Optional[str]]
     latitude: Mapped[Optional[float]]
     longitude: Mapped[Optional[float]]
+    geocodeable: Mapped[Optional[bool]]
     # 1:n
     sites: Mapped[List["Site"]] = relationship(back_populates="location")
     third_parties: Mapped[List["ThirdParty"]] = relationship(back_populates="location")
@@ -412,7 +428,8 @@ class ImpactedArea(Base):
     name: Mapped[str]
     # m:n
     serious_breaches: Mapped[List["SeriousBreach"]] = relationship(
-        secondary=seriousbreachimpactedarea, back_populates="impacted_areas"
+        secondary=seriousbreachimpactedarea,
+        back_populates="impacted_areas",
     )
 
 
@@ -422,7 +439,8 @@ class Category(Base):
     name: Mapped[str]
     # m:n
     serious_breaches: Mapped[List["SeriousBreach"]] = relationship(
-        secondary=seriousbreachcategory, back_populates="categories"
+        secondary=seriousbreachcategory,
+        back_populates="categories",
     )
 
 
@@ -438,16 +456,24 @@ class SeriousBreach(Base):
     benefit_risk_balance_changed: Mapped[bool]
     trial_id = mapped_column(ForeignKey("trial.id"), nullable=False)
     # 1:n
-    trial: Mapped["Trial"] = relationship(back_populates="serious_breaches")
+    trial: Mapped["Trial"] = relationship(
+        back_populates="serious_breaches", cascade="all, delete"
+    )
     # m:n
     impacted_areas: Mapped[List["ImpactedArea"]] = relationship(
-        secondary=seriousbreachimpactedarea, back_populates="serious_breaches"
+        secondary=seriousbreachimpactedarea,
+        back_populates="serious_breaches",
+        cascade="all, delete",
     )
     categories: Mapped[List["Category"]] = relationship(
-        secondary=seriousbreachcategory, back_populates="serious_breaches"
+        secondary=seriousbreachcategory,
+        back_populates="serious_breaches",
+        cascade="all, delete",
     )
     sites: Mapped[List["Site"]] = relationship(
-        secondary=seriousbreachsites, back_populates="serious_breaches"
+        secondary=seriousbreachsites,
+        back_populates="serious_breaches",
+        cascade="all, delete",
     )
 
 

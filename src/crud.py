@@ -1,10 +1,14 @@
 import time
 from datetime import datetime
-from typing import TypeVar, cast, List, Final, Dict
+from typing import TypeVar, cast, List, Final, Dict, Type
 
 import yaml
-from sqlalchemy import MetaData, select, text, create_engine
+from sqlalchemy import select, create_engine, MetaData, Table, text
+from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.ext.declarative import DeclarativeMeta
+from sqlalchemy.exc import OperationalError
 from tqdm import tqdm
 
 from src.schemas import (
@@ -34,7 +38,6 @@ from src.api import (
     get_full_trial,
 )
 
-Model = TypeVar("Model")
 
 with open("decodings.yaml", "r") as file:
     DECODINGS = yaml.safe_load(file)
@@ -45,7 +48,9 @@ with open("config.yaml", "r") as file:
 THIRD_PARTY_DUTY_DECODINGS: Final[Dict] = DECODINGS["third_party_duty"]
 
 
-def get_or_create(session: Session, model: Model, defaults=None, **kwargs) -> Model:
+def get_or_create(
+    session: Session, model: Type[DeclarativeMeta], defaults=None, **kwargs
+) -> Type[DeclarativeMeta]:
     """
     Get an instance of the model or create it and add it to session if it doesn't exist.
 
@@ -61,7 +66,7 @@ def get_or_create(session: Session, model: Model, defaults=None, **kwargs) -> Mo
     instance = session.query(model).filter_by(**kwargs).first()
 
     if instance:
-        return cast(Model, instance)
+        return instance
 
     else:
         params = {**kwargs}
@@ -70,44 +75,64 @@ def get_or_create(session: Session, model: Model, defaults=None, **kwargs) -> Mo
 
         instance = model(**params)
         session.add(instance)
-        return cast(Model, instance)
+        return instance
 
 
-def delete_table_entries(
-    session: Session,
-    table_names: List[str],
-    dialect: str,
-    delete_all_except: bool = False,
-) -> None:
+def drop_tables(session: Session, tables_to_keep: list[str], dialect: str) -> None:
     """
-    Delete all entries from the specified tables or from all tables except the specified ones in the database.
-    Committing changes has to be handled outside the function.
+    Drops all tables in the database except those specified in tables_to_keep.
 
     Parameter:
-    - session: SQLAlchemy database session.
-    - table_names (list): List of table names to delete entries from.
-    - dialect (str): SQL dialect (e.g., "sqlite", "postgresql", "mysql").
-    - delete_all_except (bool): If True, delete entries from all tables except those specified.
-                                If False, delete entries only from the specified tables.
+        session: The SQLAlchemy session to use.
+        tables_to_keep: List of table names to keep.
     """
-    metadata = MetaData()
-    metadata.reflect(bind=session.bind)
 
-    if delete_all_except:
-        tables_to_delete = [
-            table for table in metadata.tables.values() if table.name not in table_names
-        ]
-    else:
-        tables_to_delete = [
-            table for table in metadata.tables.values() if table.name in table_names
-        ]
+    inspector = inspect(session.bind)
+    all_tables = inspector.get_table_names()
 
-    for table in tables_to_delete:
-        print(f"Deleting all entries from table '{table.name}'...")
-        session.execute(text(f"DELETE FROM {table.name}"))
+    for table in all_tables:
+        if table not in tables_to_keep:
+            if dialect == "postgresql":
+                drop_statement = f"DROP TABLE IF EXISTS {table} CASCADE;"
+                session.execute(text(drop_statement))
+            else:
+                drop_statement = f"DROP TABLE IF EXISTS {table};"
+                session.execute(text(drop_statement))
 
-    if not tables_to_delete:
-        print("No tables matched the given criteria.")
+    print(f"Dropped {len(all_tables) - len(tables_to_keep)} tables.")
+
+
+def delete_all_except(session, tables_to_keep):
+    """
+    Delete all rows from all tables in the database except the specified tables.
+
+    Parameter:
+        session: The SQLAlchemy session to use.
+        tables_to_keep: List of table names to keep.
+    """
+
+    try:
+        metadata = MetaData()
+        metadata.reflect(bind=session.bind)
+
+        tables_to_keep_set = set(tables_to_keep)
+
+        for table_name in metadata.tables.keys():
+            if table_name not in tables_to_keep_set:
+                table = metadata.tables[table_name]
+
+                session.execute(table.delete())
+                print(f"Deleted all rows from table: {table_name}")
+
+        session.commit()
+        print("All rows deleted except from the specified tables.")
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 def insert_trial_data(
@@ -469,10 +494,18 @@ def update_location_coordinates(database_uri: str) -> None:
                 country=loc.country,
                 postalcode=loc.postcode,
             )
-            loc.latitude = lat
-            loc.longitude = lon
-            session.commit()
-            time.sleep(1)
+            if not lat and not lon:
+                loc.latitude = None
+                loc.latitude = None
+                loc.geocodeable = False
+                session.commit()
+                time.sleep(2)
+            else:
+                loc.latitude = lat
+                loc.longitude = lon
+                loc.geocodeable = True
+                session.commit()
+                time.sleep(2)
 
 
 def insert_update_status(session: Session, update_status: str) -> None:
@@ -488,8 +521,7 @@ def scrape_ctis(database_uri: str) -> None:
     Parameter:
     - database_uri: SQLAlchemy database connection string in the format: postgresql+psycopg2://username:password@db_ip:db_port/db_name
     """
-    engine = create_engine(database_uri)
-    Session = sessionmaker(engine)
+
     total_trial_records = get_total_trial_records()
     environment = CONFIG["environment"]
     if environment == "dev":
@@ -501,31 +533,32 @@ def scrape_ctis(database_uri: str) -> None:
             f"Wrong environment configuration ({environment}). Choose either 'dev' or 'prod'"
         )
 
-    with Session() as session:
-        try:
-            delete_table_entries(
+    engine = create_engine(database_uri)
+    Session = sessionmaker(engine)
+    session = Session()
+    try:
+        drop_tables(
+            session=session,
+            tables_to_keep=["update_history"],
+            dialect=sql_dialect,
+        )
+
+        Base.metadata.create_all(engine)
+
+        for trial_overview in tqdm(get_trial_overview(), total=total_trial_records):
+            full_trial = get_full_trial(trial_overview.ctNumber)
+            insert_trial_data(
                 session=session,
-                delete_all_except=True,
-                table_names=["location", "update_history"],
-                dialect=sql_dialect,
+                trial_overview=trial_overview,
+                full_trial=full_trial,
             )
-            session.flush()
-            Base.metadata.create_all(engine)
-
-            for trial_overview in tqdm(get_trial_overview(), total=total_trial_records):
-                full_trial = get_full_trial(trial_overview.ctNumber)
-                insert_trial_data(
-                    session=session,
-                    trial_overview=trial_overview,
-                    full_trial=full_trial,
-                )
-                if CONFIG["environment"] == "dev":
-                    session.commit()
-
             session.commit()
-            insert_update_status(session, "Update successful")
+        session.commit()
 
-        except Exception as e:
-            session.rollback()
-            insert_update_status(session, f"Update failed - {type(e).__name__}")
-            raise
+    except Exception as e:
+        insert_update_status(session, f"Update failed - {type(e).__name__}")
+        session.commit()
+        raise
+
+    finally:
+        session.close()
