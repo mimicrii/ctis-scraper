@@ -6,6 +6,7 @@ import requests
 import yaml
 from dacite import from_dict, Config
 
+from src.log import logger
 from src.helpers import validate_response
 from src.parse import TrialOverview, FullTrial
 
@@ -126,7 +127,7 @@ def get_location_coordinates(
     json_data = validate_response(r)
 
     if len(json_data) == 0:
-        print(f"No coordinates found for {street}, {city}, {country}")
+        logger.debug(f"No coordinates found for {street}, {city}, {country}")
         return None, None
 
     lat = json_data[0]["lat"]

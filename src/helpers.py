@@ -8,6 +8,7 @@ import requests
 import yaml
 from dotenv import load_dotenv
 
+from src.log import logger
 from src.parse import SponsorDuty
 
 
@@ -104,15 +105,15 @@ def validate_response(response: requests.Response) -> dict:
         response.raise_for_status()
         json_data = response.json()
     except requests.exceptions.HTTPError as http_err:
-        print(f"HTTP error occurred: {http_err}")
-        print(f"Response content: {response.content}")
+        logger.error(f"HTTP error occurred: {http_err}")
+        logger.info(f"Response content: {response.content}")
         raise
     except requests.exceptions.RequestException as req_err:
-        print(f"Request error occurred: {req_err}")
+        logger.error(f"Request error occurred: {req_err}")
         raise
     except ValueError as json_err:
-        print(f"JSON decoding failed: {json_err}")
-        print(f"Response content: {response.content}")
+        logger.error(f"JSON decoding failed: {json_err}")
+        logger.info(f"Response content: {response.content}")
         raise
     return json_data
 

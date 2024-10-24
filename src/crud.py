@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import TypeVar, cast, List, Final, Dict, Type
 
 import yaml
-from sqlalchemy import select, create_engine, MetaData, Table, text
+from sqlalchemy import select, create_engine, MetaData, text, func
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.orm import DeclarativeBase
@@ -29,6 +29,7 @@ from src.schemas import (
     ImpactedArea,
     UpdateHistory,
 )
+from src.log import logger
 from src.parse import TrialOverview, FullTrial
 from src.helpers import timestamp_to_date, country_to_iso_codes, decode_third_party_duty
 from src.api import (
@@ -99,7 +100,7 @@ def drop_tables(session: Session, tables_to_keep: list[str], dialect: str) -> No
                 drop_statement = f"DROP TABLE IF EXISTS {table};"
                 session.execute(text(drop_statement))
 
-    print(f"Dropped {len(all_tables) - len(tables_to_keep)} tables.")
+    logger.info(f"Dropped {len(all_tables) - len(tables_to_keep)} tables.")
 
 
 def delete_all_except(session, tables_to_keep):
@@ -122,13 +123,13 @@ def delete_all_except(session, tables_to_keep):
                 table = metadata.tables[table_name]
 
                 session.execute(table.delete())
-                print(f"Deleted all rows from table: {table_name}")
+                logger.info(f"Deleted all rows from table: {table_name}")
 
         session.commit()
-        print("All rows deleted except from the specified tables.")
+        logger.info("All rows deleted except from the specified tables.")
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        logger.info(f"An error occurred: {e}")
         session.rollback()
         raise
     finally:
@@ -476,18 +477,25 @@ def insert_trial_data(
 
 def update_location_coordinates(database_uri: str) -> None:
     """
-    Gets lat and lon for all entries in location table that are empty in lat and lon column and updates the table respectivly
+    Gets lat and lon for all entries in location table that are empty in lat and lon column and have not been used for an api call. Updates the table respectivly
 
     Parameter:
     - database_uri: SQLAlchemy database connection string in the format: postgresql+psycopg2://username:password@db_ip:db_port/db_name
     """
     engine = create_engine(database_uri)
     Session = sessionmaker(engine)
-
+    logger.info("Updating Location coordinates...")
     with Session() as session:
-        stmt = select(Location).where(Location.latitude == None)
+        count_stmt = select(func.count()).where(
+            Location.latitude == None, Location.geocodeable == None
+        )
+        total_count = session.execute(count_stmt).scalar()
+
+        stmt = select(Location).where(
+            Location.latitude == None, Location.geocodeable == None
+        )
         result = session.execute(stmt)
-        for loc in result.scalars():
+        for loc in tqdm(result.scalars(), total=total_count):
             lat, lon = get_location_coordinates(
                 street=loc.address,
                 city=loc.city,
@@ -539,9 +547,10 @@ def scrape_ctis(database_uri: str) -> None:
     try:
         drop_tables(
             session=session,
-            tables_to_keep=["update_history"],
+            tables_to_keep=["location", "update_history"],
             dialect=sql_dialect,
         )
+        session.commit()
 
         Base.metadata.create_all(engine)
 

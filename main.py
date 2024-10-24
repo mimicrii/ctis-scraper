@@ -1,5 +1,5 @@
 import argparse
-
+import logging
 from src.helpers import get_db_uri
 from src.crud import (
     scrape_ctis,
@@ -15,6 +15,9 @@ def main():
         help="Mode of operation: 'scrape' or 'update_coordinates'",
     )
     args = parser.parse_args()
+    logging.basicConfig(
+        level=logging.WARNING, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
     DATABASE_URI = get_db_uri()
 
     if args.mode == "scrape":
