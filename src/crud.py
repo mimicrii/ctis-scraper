@@ -563,10 +563,10 @@ def scrape_ctis(database_uri: str) -> None:
             )
             session.commit()
         session.commit()
+        insert_update_status(session, "Update successful")
 
     except Exception as e:
         insert_update_status(session, f"Update failed - {type(e).__name__}")
-        session.commit()
         raise
 
     finally:
