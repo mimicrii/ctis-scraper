@@ -45,5 +45,5 @@ api:
         mscStatus: null
   geocoding:
     headers:
-      User-Agent": "ctis-trials"
+      User-Agent": "locations_for_trials"
 

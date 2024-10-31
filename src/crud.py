@@ -507,13 +507,13 @@ def update_location_coordinates(database_uri: str) -> None:
                 loc.latitude = None
                 loc.geocodeable = False
                 session.commit()
-                time.sleep(2)
+                time.sleep(1)
             else:
                 loc.latitude = lat
                 loc.longitude = lon
                 loc.geocodeable = True
                 session.commit()
-                time.sleep(2)
+                time.sleep(1)
 
 
 def insert_update_status(session: Session, update_status: str) -> None:

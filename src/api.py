@@ -78,7 +78,7 @@ def get_total_trial_records() -> int:
 
 def get_full_trial(ct_number: str) -> FullTrial:
     """
-    Requests the trial design api endpoint to get the trial design of a single trial and parses json data to TrialDesign dataclass.
+    Requests the trial details api endpoint to get trial details of a single trial and parses json data to TrialDesign dataclass.
 
     Parameter:
     - ct_number: The ct number identifier of a trial listed in the ctis portal.
